@@ -1,7 +1,13 @@
 name: {{ project_name }}-{{ environment }}
 
-# Manexware fork: no proxy container. Odoo is published on 127.0.0.1 only and the
-# host's Nginx (rkd instance nginx) terminates TLS and proxies to it.
+# Manexware fork. proxy: {{ proxy }} | db_mode: {{ db_mode }}
+{% if proxy == 'nginx' %}
+# Odoo is published on 127.0.0.1 only; the host's Nginx (rkd instance nginx)
+# terminates TLS and proxies to it.
+{% else %}
+# Odoo is exposed to the Traefik container on the traefik-public network
+# (rkd instance traefik), which terminates TLS.
+{% endif %}
 services:
   web:
     build:
@@ -15,11 +21,17 @@ services:
       db:
         condition: service_healthy
 {% endif %}
+{% if proxy == 'nginx' %}
     ports:
       - "127.0.0.1:{{ host_http_port }}:8069"
       - "127.0.0.1:{{ host_gevent_port }}:8072"
+{% else %}
+    expose:
+      - "8069"
+      - "8072"
+{% endif %}
 {% if external_db %}
-    # Lets db_host: host.docker.internal reach a PostgreSQL on the VPS itself.
+    # host.docker.internal reaches the VPS host (db_mode vps).
     extra_hosts:
       - "host.docker.internal:host-gateway"
 {% endif %}
@@ -46,10 +58,36 @@ services:
 {% if external_db %}
     secrets:
       - pgpass
-{% else %}
+{% endif %}
+{% if proxy == 'traefik' or not external_db %}
     networks:
+{% if proxy == 'traefik' %}
+      - traefik-public
+{% else %}
       - default
+{% endif %}
+{% if not external_db %}
       - {{ environment }}-internal
+{% endif %}
+{% endif %}
+{% if proxy == 'traefik' %}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.{{ slug }}-http.rule=Host(`{{ domain }}`)"
+      - "traefik.http.routers.{{ slug }}-http.entrypoints=web"
+      - "traefik.http.routers.{{ slug }}-http.middlewares=redirect-https"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.{{ slug }}.rule=Host(`{{ domain }}`)"
+      - "traefik.http.routers.{{ slug }}.entrypoints=websecure"
+      - "traefik.http.routers.{{ slug }}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{ slug }}.service={{ slug }}-svc"
+      - "traefik.http.services.{{ slug }}-svc.loadbalancer.server.port=8069"
+      - "traefik.http.routers.{{ slug }}-lp.rule=Host(`{{ domain }}`) && (PathPrefix(`/longpolling`) || PathPrefix(`/websocket`))"
+      - "traefik.http.routers.{{ slug }}-lp.entrypoints=websecure"
+      - "traefik.http.routers.{{ slug }}-lp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.{{ slug }}-lp.service={{ slug }}-lp-svc"
+      - "traefik.http.services.{{ slug }}-lp-svc.loadbalancer.server.port=8072"
 {% endif %}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8069/web/health"]
@@ -112,8 +150,16 @@ secrets:
 {% else %}
   postgresql_password:
     file: ./odoo_pg_pass
+{% endif %}
+{% if proxy == 'traefik' or not external_db %}
 
 networks:
+{% if proxy == 'traefik' %}
+  traefik-public:
+    external: true
+{% endif %}
+{% if not external_db %}
   {{ environment }}-internal:
     driver: bridge
+{% endif %}
 {% endif %}

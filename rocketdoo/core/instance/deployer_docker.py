@@ -33,7 +33,9 @@ from .config_manager import (
 )
 from .db_seed import SEEDED_MARK, docker_restore_script, docker_state_script, pg_tool, wait_for_db
 from .enterprise import branch, clone_script
-from .external_db import ExternalDbPasswordMissing, external_password_var, pgpass_line
+from .external_db import DOCKER_HOST_ALIAS, ExternalDbPasswordMissing, external_password_var, pgpass_line
+from .vps_postgres import vps_postgres_script
+from rocketdoo.core.traefik import NETWORK as TRAEFIK_NETWORK
 from .gitman_remote import GITMAN_DIR
 from .secrets_store import ADMIN_LOGIN_PASSWD, ADMIN_PASSWD, PG_PASS, load, random_password, save
 from .seeding import seed, seed_dir
@@ -111,11 +113,19 @@ class DockerInstanceDeployer:
         self.db_name = env_config.get("db_name") or self.db_user
         self.seed_database = env_config.get("seed_database", "")
 
-        # Manexware fork: PostgreSQL outside the compose unless db_mode says otherwise.
-        self.external_db = env_config.get("db_mode", "external") == "external"
-        self.db_host = env_config.get("db_host", "") if self.external_db else "db"
+        # Manexware fork: where PostgreSQL runs and which proxy publishes Odoo.
+        self.db_mode = env_config.get("db_mode", "container")
+        self.proxy = env_config.get("proxy", "traefik")
+        self.external_db = self.db_mode in ("vps", "external")
+        if self.db_mode == "vps":
+            self.db_host = DOCKER_HOST_ALIAS
+        elif self.db_mode == "external":
+            self.db_host = env_config.get("db_host", "")
+        else:
+            self.db_host = "db"
         self.db_port = int(env_config.get("db_port", 5432)) if self.external_db else 5432
-        self.db_sslmode = env_config.get("db_sslmode", "prefer") if self.external_db else "prefer"
+        # The VPS's own cluster is reached over the Docker bridge: no TLS there.
+        self.db_sslmode = env_config.get("db_sslmode", "prefer") if self.db_mode == "external" else "prefer"
         # Ports Nginx proxies to; InstanceConfig fills per-environment defaults.
         self.host_http_port = int(env_config.get("host_http_port") or (8069 if env == "prod" else 8169))
         self.host_gevent_port = int(env_config.get("host_gevent_port") or (8072 if env == "prod" else 8172))
@@ -235,7 +245,7 @@ class DockerInstanceDeployer:
 
         # An external server's role already has a password, chosen by whoever
         # administers it: it is supplied, never generated.
-        if not pg_pass and self.external_db:
+        if not pg_pass and self.db_mode == "external":
             pg_pass = os.environ.get(external_password_var(self.env), "")
             if pg_pass:
                 console.print(f"[dim]  Using the PostgreSQL password from ${external_password_var(self.env)}[/dim]")
@@ -249,7 +259,7 @@ class DockerInstanceDeployer:
             return {"pg_pass": pg_pass or _PLACEHOLDER, "admin_passwd": admin_passwd or _PLACEHOLDER}
 
         generated = []
-        if not pg_pass and self.external_db:
+        if not pg_pass and self.db_mode == "external":
             raise ExternalDbPasswordMissing(
                 f"No password for the external PostgreSQL role {self.db_user}. Run rkd instance init, "
                 f"or export {external_password_var(self.env)}, or add {PG_PASS}=... to "
@@ -320,6 +330,8 @@ class DockerInstanceDeployer:
             "odoo_tag": self.cfg.get("odoo_tag", self.cfg.get("odoo_version", "17.0")),
             "domain": self.cfg.get("domain", ""),
             "external_db": self.external_db,
+            "db_mode": self.db_mode,
+            "proxy": self.proxy,
             "db_host": self.db_host,
             "db_port": self.db_port,
             "db_sslmode": self.db_sslmode,
@@ -468,8 +480,14 @@ class DockerInstanceDeployer:
         if not self._ssh(ensure_dirs_command(dirs, self.remote_path, '"$(id -u):$(id -g)"')):
             console.print(f"[red]✗ Could not create {self.remote_path} on the VPS[/red]")
             return False
-        # Manexware fork: no shared proxy network. Nginx runs on the host and
-        # reaches Odoo through the ports published on 127.0.0.1.
+        # With Nginx there is no shared network: it runs on the host and reaches
+        # Odoo through the ports published on 127.0.0.1. With Traefik the
+        # compose declares traefik-public as external, so it must exist first.
+        if self.proxy == "traefik" and not self._ssh(
+            f"docker network inspect {TRAEFIK_NETWORK} >/dev/null 2>&1 || docker network create {TRAEFIK_NETWORK}"
+        ):
+            console.print(f"[red]✗ Could not create the Docker network {TRAEFIK_NETWORK} on the VPS[/red]")
+            return False
         return True
 
     def _transfer(self, tmp: Path) -> bool:
@@ -615,9 +633,34 @@ class DockerInstanceDeployer:
         wrap psql's output in carriage returns and make the emptiness checks
         below answer wrongly.
         """
+        if self.db_mode == "vps" and not self._ensure_vps_postgres():
+            return False
         if self.seed_database and not self._seed_database():
             return False
         return self._ssh("bash -s", timeout=1800, input=self._ensure_database_script())
+
+    def _ensure_vps_postgres(self) -> bool:
+        """db_mode vps: install PostgreSQL on the host and let the containers in.
+
+        Idempotent; the role password travels inside the script on stdin,
+        never as an argument.
+        """
+        console.print("[dim]  Preparing PostgreSQL on the VPS host...[/dim]")
+        pg_pass = load(self.project_path, self.env).get(PG_PASS)
+        try:
+            script = vps_postgres_script(
+                db_user=self.db_user,
+                password=pg_pass,
+                version=str(self.cfg.get("db_version", "")),
+                port=self.db_port,
+            )
+        except ValueError as error:
+            console.print(f"[red]✗ {error}[/red]")
+            return False
+        if not self._ssh("bash -s", timeout=1200, input=script):
+            console.print("[red]✗ Could not prepare PostgreSQL on the VPS (needs root or passwordless sudo)[/red]")
+            return False
+        return True
 
     def _ensure_database_script(self) -> str:
         """The `bash -s` script of step 5, for either database mode.
@@ -632,7 +675,7 @@ class DockerInstanceDeployer:
         createdb = pg_tool("createdb", external=self.external_db, db_user=self.db_user)
         # --no-deps: with an external server there is no `db` to start, and
         # in container mode it is already up from the lines above.
-        odoo_run = "docker compose run --rm -T --no-deps web odoo"
+        odoo_run = "docker compose run --rm -T --no-deps -l traefik.enable=false web odoo"
         lines = [
             # The braces are load-bearing: bash reads a compound command
             # whole before running any of it, and `docker compose` reads
@@ -738,7 +781,7 @@ class DockerInstanceDeployer:
             out = subprocess.run(cmd, input=script, text=True, capture_output=True, timeout=60, env=env).stdout
         except subprocess.TimeoutExpired:
             out = ""
-        check = preflight.public_url_check(domain, out or "", env=self.env)
+        check = preflight.public_url_check(domain, out or "", env=self.env, proxy=self.proxy)
         self.checks.append(check)
         print_checks(console, [check])
 

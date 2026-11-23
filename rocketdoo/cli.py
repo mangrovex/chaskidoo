@@ -204,15 +204,27 @@ def scaffold(ctx, template, force):
     default=None,
     help="Create the project from a golden path without prompting (see: rkd profiles list)",
 )
+@click.option(
+    "--db-mode",
+    type=click.Choice(["container", "vps", "external"]),
+    default=None,
+    help="Stage/prod: PostgreSQL in Docker (container), on the VPS host (vps) or external. Asked if omitted.",
+)
+@click.option(
+    "--proxy",
+    type=click.Choice(["nginx", "traefik"]),
+    default=None,
+    help="Stage/prod reverse proxy. Asked if omitted.",
+)
 @click.pass_context
-def init(ctx, profile):
+def init(ctx, profile, db_mode, proxy):
     """Initialize environment configuration, interactively or from a profile."""
     if profile:
         try:
             get_golden_path(profile)
         except ValueError as exc:
             raise click.BadParameter(str(exc), param_hint="--profile") from None
-    init_project(profile=profile)
+    init_project(profile=profile, db_mode=db_mode, proxy=proxy)
 
 
 @main.group(invoke_without_command=True)

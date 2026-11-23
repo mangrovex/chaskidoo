@@ -21,15 +21,18 @@ from rocketdoo.core.models import InstanceConfig
 TEMPLATES = Path(__file__).resolve().parent.parent / "rocketdoo" / "templates" / "instance"
 
 
-def _ctx(external: bool) -> dict:
+def _ctx(external: bool, proxy: str = "nginx", db_mode: str | None = None) -> dict:
+    db_mode = db_mode or ("external" if external else "container")
     return {
+        "proxy": proxy,
+        "db_mode": db_mode,
         "environment": "stage",
         "project_name": "demo",
         "slug": "demo_stage",
         "odoo_tag": "19.0",
         "domain": "stage.example.com",
         "external_db": external,
-        "db_host": "pg.example.com" if external else "db",
+        "db_host": {"external": "pg.example.com", "vps": "host.docker.internal"}.get(db_mode, "db"),
         "db_port": 5433 if external else 5432,
         "db_sslmode": "require" if external else "prefer",
         "host_http_port": 8169,
@@ -64,13 +67,20 @@ def _render(name: str, ctx: dict) -> str:
 # ─── model ──────────────────────────────────────────────────────────────────
 
 
-def test_defaults_are_external_db_and_per_env_ports():
+def test_upstream_file_keeps_upstream_behaviour():
+    cfg = InstanceConfig.model_validate({"prod": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "p.example.com"}})
+    prod = cfg.get("prod")
+    assert (prod.db_mode, prod.proxy, prod.effective_db_host) == ("container", "traefik", "db")
+    assert prod.is_deployable
+
+
+def test_vps_mode_needs_no_host_and_external_does():
     cfg = InstanceConfig.model_validate(
-        {"stage": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "s.example.com"},
-         "prod": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "p.example.com", "db_host": "pg"}}
+        {"stage": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "s.example.com", "db_mode": "external"},
+         "prod": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "p.example.com", "db_mode": "vps"}}
     )
     stage, prod = cfg.get("stage"), cfg.get("prod")
-    assert stage.db_mode == "external" and prod.db_mode == "external"
+    assert prod.effective_db_host == "host.docker.internal" and prod.external_db
     assert (stage.host_http_port, stage.host_gevent_port) == (8169, 8172)
     assert (prod.host_http_port, prod.host_gevent_port) == (8069, 8072)
     assert "db_host" in stage.missing_fields() and not stage.is_deployable
@@ -150,7 +160,7 @@ def test_pgpass_escapes_colons_and_backslashes():
 
 def test_pg_tool_runs_clients_in_a_one_off_web_container():
     assert db_seed.pg_tool("psql", external=True, db_user="u") == (
-        "docker compose run --rm -T --no-deps --user root --entrypoint psql web"
+        "docker compose run --rm -T --no-deps -l traefik.enable=false --user root --entrypoint psql web"
     )
     assert db_seed.pg_tool("psql", external=False, db_user="u") == "docker compose exec -T db psql -U u"
 
@@ -169,7 +179,6 @@ def test_external_seed_scripts_never_touch_a_db_service():
     for script in (state, restore):
         _bash_ok(script)
         assert "exec -T db" not in script and "up -d db" not in script
-        assert "traefik" not in script
     assert "--entrypoint pg_restore web -d demo" in restore
     assert "--entrypoint createdb web -E UTF8" in restore
 
@@ -186,28 +195,25 @@ def test_tcp_probe_maps_docker_host_alias_to_bridge_gateway():
 
 
 def _deployer(tmp_path, **overrides) -> DockerInstanceDeployer:
-    cfg = InstanceConfig.model_validate(
-        {"stage": {"vps": {"host": "h", "ssh_key": "k"}, "domain": "stage.example.com",
-                   "db_host": "pg.example.com", **overrides}}
-    ).to_yaml_dict()["environments"]["stage"]
-    deployer = DockerInstanceDeployer.__new__(DockerInstanceDeployer)
-    # Same attributes __init__ sets, minus resolve_auth (no SSH here).
-    deployer.env, deployer.cfg, deployer.project_path = "stage", cfg, tmp_path
-    deployer.remote_path = cfg["remote_path"]
-    deployer.db_user, deployer.db_name = cfg["db_user"], cfg["db_name"]
-    deployer.external_db = cfg["db_mode"] == "external"
-    deployer.db_host = cfg["db_host"] if deployer.external_db else "db"
-    deployer.db_port = cfg["db_port"]
+    from rocketdoo.core.instance import deployer_docker
+
+    env = {"vps": {"host": "h", "ssh_key": "k"}, "domain": "stage.example.com", "db_host": "pg.example.com", **overrides}
+    cfg = InstanceConfig.model_validate({"stage": env}).to_yaml_dict()["environments"]["stage"]
+    original = deployer_docker.resolve_auth
+    deployer_docker.resolve_auth = lambda *a, **k: {}
+    try:
+        deployer = DockerInstanceDeployer("stage", cfg, tmp_path)
+    finally:
+        deployer_docker.resolve_auth = original
     deployer._resolve_admin_login_password = lambda: "adminpw"
     return deployer
 
 
-@pytest.mark.parametrize("mode", ["external", "container"])
+@pytest.mark.parametrize("mode", ["external", "vps", "container"])
 def test_ensure_database_script_is_valid_bash(tmp_path, mode):
     script = _deployer(tmp_path, db_mode=mode)._ensure_database_script()
     _bash_ok(script)
-    assert "traefik" not in script
-    if mode == "external":
+    if mode != "container":
         assert "up -d db" not in script and "exec -T db" not in script
         assert "--entrypoint createdb web" in script
     else:
@@ -265,8 +271,8 @@ def test_install_script_is_valid_bash_and_embeds_the_site():
 
 
 def test_preflight_reports_nginx_and_external_db():
-    cfg = {"type": "docker", "db_mode": "external", "db_host": "pg", "db_port": 5432, "domain": "erp.example.com",
-           "remote_path": "/opt/odoo-prod"}
+    cfg = {"type": "docker", "db_mode": "external", "proxy": "nginx", "db_host": "pg", "db_port": 5432,
+           "domain": "erp.example.com", "remote_path": "/opt/odoo-prod"}
     remote = {"reachable": "yes", "docker_ok": "yes", "compose": "2.29", "path_writable": "yes", "mem_kb": "8000000",
               "free_kb": "99999999", "nginx_installed": "yes", "nginx_running": "yes", "nginx_site": "no",
               "db_tcp": "no", "repo_ok": [], "repo_fail": []}
@@ -276,9 +282,91 @@ def test_preflight_reports_nginx_and_external_db():
     assert "traefik" not in checks
     script = preflight._remote_script(cfg, [])
     _bash_ok(script)
-    assert "nginx_site" in script and "db_tcp" in script and "traefik" not in script
+    assert "nginx_site" in script and "db_tcp" in script
 
 
 def test_public_url_http_only_means_no_certificate_yet():
     check = preflight.public_url_check("erp.example.com", "http=200:0\nhttps=000:7\n", env="prod")
     assert not check["ok"] and "certificate" in check["detail"]
+
+
+# ─── matrix: 3 PostgreSQL modes x 2 proxies ────────────────────────────────
+
+
+@pytest.mark.parametrize("db_mode", ["container", "vps", "external"])
+@pytest.mark.parametrize("proxy_name", ["nginx", "traefik"])
+def test_compose_matrix(tmp_path, db_mode, proxy_name):
+    external = db_mode != "container"
+    text = _render("docker-compose.jinja", _ctx(external, proxy=proxy_name, db_mode=db_mode))
+    data = yaml.safe_load(text)
+    web = data["services"]["web"]
+    assert ("db" in data["services"]) == (db_mode == "container")
+    if proxy_name == "nginx":
+        assert web["ports"] == ["127.0.0.1:8169:8069", "127.0.0.1:8172:8072"]
+        assert "labels" not in web and "traefik-public" not in text
+    else:
+        assert "ports" not in web and web["expose"] == ["8069", "8072"]
+        assert "traefik.enable=true" in web["labels"]
+        assert data["networks"]["traefik-public"] == {"external": True}
+    if db_mode == "vps":
+        assert web["environment"]["PGHOST"] == "host.docker.internal"
+    if shutil.which("docker"):
+        env_dir = tmp_path / "stage"
+        env_dir.mkdir()
+        (env_dir / "docker-compose.yml").write_text(text)
+        (env_dir / "pgpass").write_text("x\n")
+        (env_dir / "odoo_pg_pass").write_text("x")
+        result = subprocess.run(["docker", "compose", "config", "-q"], cwd=env_dir, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+
+def test_vps_postgres_script_is_valid_and_quotes_the_password():
+    from rocketdoo.core.instance.vps_postgres import vps_postgres_script
+
+    script = vps_postgres_script(db_user="odoo_prod", password="it's", version="16", port=5432)
+    _bash_ok(script)
+    assert "PASSWORD 'it''s'" in script and "host all odoo_prod 172.16.0.0/12" in script
+    with pytest.raises(ValueError):
+        vps_postgres_script(db_user="bad name", password="x")
+    with pytest.raises(ValueError):
+        vps_postgres_script(db_user="odoo", password="")
+
+
+def test_one_off_containers_are_never_routed_by_traefik(tmp_path):
+    script = _deployer(tmp_path, db_mode="vps", proxy="traefik")._ensure_database_script()
+    for line in script.splitlines():
+        if "docker compose run" in line:
+            assert "-l traefik.enable=false" in line, line
+
+
+def test_preflight_traefik_and_vps_mode():
+    cfg = {"type": "docker", "db_mode": "vps", "proxy": "traefik", "domain": "erp.example.com",
+           "remote_path": "/opt/odoo-prod"}
+    remote = {"reachable": "yes", "docker_ok": "yes", "compose": "2.29", "path_writable": "yes", "mem_kb": "8000000",
+              "free_kb": "99999999", "traefik_running": "no", "traefik_attached": "no", "sudo": "no", "uid": "1000",
+              "vps_pg": "no", "repo_ok": [], "repo_fail": []}
+    checks = {c["name"]: c for c in preflight._remote_checks(cfg, remote, "prod", {})}
+    assert "nginx" not in checks and not checks["traefik"]["ok"]
+    assert checks["postgresql on the vps"]["level"] == "block" and not checks["postgresql on the vps"]["ok"]
+    assert "external postgresql" not in checks
+    _bash_ok(preflight._remote_script(cfg, []))
+
+
+def test_init_defaults_roundtrip(tmp_path):
+    from rocketdoo.core.instance import defaults
+
+    assert defaults.load(tmp_path) == defaults.FALLBACK
+    defaults.save(tmp_path, db_mode="container", proxy="traefik")
+    assert defaults.load(tmp_path) == {"db_mode": "container", "proxy": "traefik"}
+    with pytest.raises(ValueError):
+        defaults.save(tmp_path, db_mode="cloud", proxy="nginx")
+
+
+def test_rkd_init_profile_stores_choices(tmp_path):
+    result = subprocess.run(
+        ["rkd", "init", "--profile", "odoo19-ce", "--db-mode", "container", "--proxy", "traefik"],
+        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stderr[-500:]
+    stored = yaml.safe_load((tmp_path / ".rkd" / "instance_defaults.yaml").read_text())
+    assert stored == {"db_mode": "container", "proxy": "traefik"}

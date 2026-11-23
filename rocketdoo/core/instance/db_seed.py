@@ -225,7 +225,7 @@ def parse_state(stdout: str) -> str:
 # secret. Connection details come from PGHOST/PGPORT/PGUSER/PGSSLMODE/PGPASSFILE
 # set on the `web` service. `{prefix} psql{auth}` must read as
 # `... --entrypoint psql web`, hence the service name in `auth`.
-EXTERNAL_PREFIX = "docker compose run --rm -T --no-deps --user root --entrypoint"
+EXTERNAL_PREFIX = "docker compose run --rm -T --no-deps -l traefik.enable=false --user root --entrypoint"
 EXTERNAL_AUTH = " web"
 
 
@@ -291,7 +291,7 @@ def docker_restore_script(
     return _script(
         prefix=prefix,
         auth=auth,
-        filestore_runner="docker compose run --rm -T --no-deps --entrypoint sh web -c",
+        filestore_runner="docker compose run --rm -T --no-deps -l traefik.enable=false --entrypoint sh web -c",
         prologue=f"cd {shlex.quote(compose_dir)}",
         seed_dir=seed_dir,
         env=env,

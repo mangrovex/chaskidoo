@@ -73,7 +73,8 @@ class EnvConfig(BaseModel):
     db_version: str = "16"
     # Manexware fork: external PostgreSQL and Nginx host ports. The form
     # does not show them yet; edit .rkd/instance.yaml or use the CLI wizard.
-    db_mode: str = "external"
+    proxy: str = "nginx"
+    db_mode: str = "vps"
     db_host: str = ""
     db_port: int = 5432
     db_sslmode: str = "prefer"
@@ -113,13 +114,19 @@ async def init_instances(body: InstanceInitRequest):
         previous = (manager.load() if manager.exists() else {}).get("environments", {})
         # Fields the form does not show: keep what the file says instead of
         # overwriting it with the form's empty defaults.
-        fork_fields = ("db_mode", "db_host", "db_port", "db_sslmode", "db_max_connections", "host_http_port", "host_gevent_port")
+        from rocketdoo.core.instance.defaults import load as load_deploy_defaults
+
+        chosen = load_deploy_defaults(Path.cwd())
+        fork_fields = ("proxy", "db_mode", "db_host", "db_port", "db_sslmode", "db_max_connections", "host_http_port", "host_gevent_port")
         raw = {}
         for env, cfg in body.environments.items():
             values = cfg.model_dump()
             for field in fork_fields:
                 if field not in cfg.model_fields_set and field in previous.get(env, {}):
                     values[field] = previous[env][field]
+                elif field not in cfg.model_fields_set and field in chosen:
+                    # A new environment gets what `rkd init` answered.
+                    values[field] = chosen[field]
             # The wizard always sets one; without it the rendered odoo.conf
             # would ship an empty admin_passwd.
             if not values.get("admin_passwd"):

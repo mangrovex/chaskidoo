@@ -19,10 +19,17 @@ DeploymentType = Literal["docker", "native"]
 EnterpriseSource = Literal["rsync", "clone"]
 PGProfileName = Literal["small", "medium", "large"]
 # Manexware fork: where PostgreSQL lives for a Docker deploy.
-#   external  -> a server outside the compose (managed service, a dedicated
-#                host, or the VPS's own cluster via host.docker.internal)
 #   container -> upstream behaviour, a `db` service in the compose
-DBMode = Literal["external", "container"]
+#   vps       -> PostgreSQL installed on the VPS itself, outside Docker; rkd
+#                installs it, creates the role and lets the containers in
+#                through host.docker.internal
+#   external  -> a server rkd does not manage (managed service, DB host)
+# The default is the upstream behaviour, so an instance.yaml written by
+# rocketdoo keeps deploying the same way.
+DBMode = Literal["container", "vps", "external"]
+# Manexware fork: Nginx on the host, or upstream's Traefik container.
+Proxy = Literal["nginx", "traefik"]
+DOCKER_HOST_ALIAS = "host.docker.internal"
 SSLMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
 
 NATIVE_ADDONS_PATH = "/opt/odoo/extra-addons"
@@ -103,13 +110,14 @@ class InstanceEnvironment(BaseModel):
     host_http_port: int = 0
     host_gevent_port: int = 0
 
-    db_mode: DBMode = "external"
-    # Only for db_mode external. Use `host.docker.internal` for a PostgreSQL
-    # running on the VPS itself (outside Docker).
+    proxy: Proxy = "traefik"
+
+    db_mode: DBMode = "container"
+    # Only for db_mode external (vps always uses host.docker.internal).
     db_host: str = ""
     db_port: int = 5432
     db_sslmode: SSLMode = "prefer"
-    # max_connections of the external server, to size db_maxconn.
+    # max_connections of the vps/external server, to size db_maxconn.
     db_max_connections: int = 100
 
     # For db_mode external this is the version of the external server; it is
@@ -200,12 +208,19 @@ class InstanceEnvironment(BaseModel):
 
     @property
     def external_db(self) -> bool:
-        return self.type == "docker" and self.db_mode == "external"
+        """PostgreSQL outside the compose (on the VPS host or elsewhere)."""
+        return self.type == "docker" and self.db_mode in ("vps", "external")
+
+    @property
+    def effective_db_host(self) -> str:
+        if self.type != "docker" or self.db_mode == "container":
+            return "db"
+        return DOCKER_HOST_ALIAS if self.db_mode == "vps" else self.db_host
 
     @property
     def is_deployable(self) -> bool:
         """Whether a deploy could be attempted with what is configured."""
-        if self.external_db and not self.db_host:
+        if self.type == "docker" and self.db_mode == "external" and not self.db_host:
             return False
         return self.vps.is_complete and (self.type == "native" or bool(self.domain))
 
@@ -220,7 +235,7 @@ class InstanceEnvironment(BaseModel):
             missing.append("vps.password")
         if self.type != "native" and not self.domain:
             missing.append("domain")
-        if self.external_db and not self.db_host:
+        if self.type == "docker" and self.db_mode == "external" and not self.db_host:
             missing.append("db_host")
         return missing
 

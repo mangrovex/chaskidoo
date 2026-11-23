@@ -21,6 +21,9 @@ from rocketdoo.core.odoo_db import databases_result
 from rocketdoo.core.project_info import get_project_info, read_docker_compose
 from rocketdoo.core.ssh_manager import list_private_keys
 
+from . import defaults as deploy_defaults
+from .defaults import DB_MODE_LABELS, DB_MODES, PROXIES, PROXY_LABELS
+
 console = Console()
 
 _custom_style = Style(
@@ -87,6 +90,24 @@ DEBIAN_PG_SHARED_BUFFERS = "128MB"
 CRON_THREADS = 1
 
 
+def _select(question: str, labels: dict, options: tuple, default: str) -> str:
+    choices = [questionary.Choice(labels[o], value=o) for o in options]
+    answer = questionary.select(
+        question, choices=choices, default=next(c for c in choices if c.value == default), style=_custom_style
+    ).ask()
+    if answer is None:  # cancelled prompt
+        raise SystemExit("Cancelled.")
+    return answer
+
+
+def _select_db_mode(default: str) -> str:
+    return _select("¿Dónde se ejecuta PostgreSQL en este entorno?", DB_MODE_LABELS, DB_MODES, default)
+
+
+def _select_proxy(default: str) -> str:
+    return _select("Proxy inverso (HTTPS) para los entornos:", PROXY_LABELS, PROXIES, default)
+
+
 def db_maxconn(pg_max_connections: int, workers: int) -> int:
     """Connections each Odoo process may open without exhausting PostgreSQL.
 
@@ -127,6 +148,9 @@ class InstanceConfigManager:
     def __init__(self, project_path: Path):
         self.project_path = Path(project_path)
         self.config_path = self.project_path / CONFIG_FILE
+        # What `rkd init` answered; proposed as defaults by the wizard.
+        self._defaults = deploy_defaults.load(self.project_path)
+        self._proxy: str | None = None
 
     def exists(self) -> bool:
         return self.config_path.exists()
@@ -145,7 +169,9 @@ class InstanceConfigManager:
         A cancelled `questionary` prompt returns None instead of raising, so
         a half-answered wizard reaches here with `None` in required fields.
         """
-        InstanceConfig.model_validate(config)
+        # Manexware fork: write the normalised model, so derived values
+        # (host ports, db_name) are visible and editable in the file.
+        config = InstanceConfig.model_validate(config).to_yaml_dict()
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.config_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
@@ -161,6 +187,11 @@ class InstanceConfigManager:
         """
         existing = {"environments": {}} if fresh or not self.exists() else self.load()
         known = existing["environments"]
+        # An environment already deployed behind a proxy sets the proposal:
+        # two proxies on one VPS fight over ports 80/443.
+        proxies = {cfg.get("proxy") for cfg in known.values() if cfg.get("type") == "docker"}
+        if len(proxies) == 1:
+            self._defaults["proxy"] = proxies.pop()
 
         types = {env: cfg["type"] for env, cfg in known.items()}
         if len(set(types.values())) > 1:
@@ -280,26 +311,27 @@ class InstanceConfigManager:
         console.print("\n[bold]Odoo[/bold]")
         odoo_version = Prompt.ask("Odoo version", default=project.odoo_version or "17.0")
         odoo_tag = domain = letsencrypt_email = db_version = ""
-        db_mode, db_host, db_port, db_sslmode, db_max_connections = "external", "", 5432, "prefer", 100
+        db_mode, db_host, db_port, db_sslmode, db_max_connections = "container", "", 5432, "prefer", 100
+        proxy = ""
         if docker:
             odoo_tag = Prompt.ask("Docker image tag", default=odoo_version)
+            if self._proxy is None:
+                # One proxy per run: stage and prod often share a VPS, and
+                # Nginx and Traefik cannot both own ports 80/443.
+                self._proxy = _select_proxy(self._defaults["proxy"])
+            proxy = self._proxy
             domain = Prompt.ask("Domain (e.g. erp.mycompany.com)")
-            letsencrypt_email = Prompt.ask("Email for Let's Encrypt (certbot)")
+            letsencrypt_email = Prompt.ask("Email for Let's Encrypt")
 
             console.print("\n[bold]PostgreSQL[/bold]")
-            db_mode = questionary.select(
-                "Where does PostgreSQL run?",
-                choices=[
-                    questionary.Choice("External server (recommended: managed service, DB host, or the VPS's own cluster)", value="external"),
-                    questionary.Choice("Container in the compose (upstream rocketdoo behaviour)", value="container"),
-                ],
-                style=_custom_style,
-            ).ask() or "external"
-            if db_mode == "external":
+            db_mode = _select_db_mode(self._defaults["db_mode"])
+            if db_mode == "vps":
                 console.print(
-                    "[dim]For a PostgreSQL installed on the VPS itself (outside Docker) use host.docker.internal "
-                    "and allow the Docker networks in pg_hba.conf.[/dim]"
+                    "[dim]rkd instalará PostgreSQL en el VPS si falta, creará el rol con una contraseña generada "
+                    "y permitirá la conexión desde los contenedores (host.docker.internal). Requiere sudo.[/dim]"
                 )
+                db_port = int(Prompt.ask("Puerto de PostgreSQL en el VPS", default="5432"))
+            elif db_mode == "external":
                 db_host = Prompt.ask("PostgreSQL host")
                 db_port = int(Prompt.ask("PostgreSQL port", default="5432"))
                 db_sslmode = questionary.select(
@@ -310,7 +342,11 @@ class InstanceConfigManager:
                 ).ask() or "prefer"
                 db_max_connections = int(Prompt.ask("max_connections of that server", default="100"))
             db_version = Prompt.ask(
-                "PostgreSQL server version" if db_mode == "external" else "PostgreSQL version",
+                {
+                    "external": "PostgreSQL server version",
+                    "vps": "Versión de PostgreSQL a instalar en el VPS",
+                    "container": "PostgreSQL version (imagen postgres)",
+                }[db_mode],
                 default=project.db_version or "16",
             )
         while True:
@@ -420,6 +456,7 @@ class InstanceConfigManager:
                 odoo_tag=odoo_tag,
                 domain=domain,
                 letsencrypt_email=letsencrypt_email,
+                proxy=proxy,
                 db_mode=db_mode,
                 db_host=db_host,
                 db_port=db_port,

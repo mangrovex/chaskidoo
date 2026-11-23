@@ -303,17 +303,20 @@ def instance_deploy(env, dry_run, yes):
                 f"{warning_line}"
             )
         else:
-            unanswered = [c for c in getattr(deployer, "checks", []) if c["name"] in ("nginx", "public url") and not c["ok"]]
+            proxy_name = env_config.get("proxy", "traefik")
+            unanswered = [
+                c for c in getattr(deployer, "checks", []) if c["name"] in ("nginx", "traefik", "public url") and not c["ok"]
+            ]
             if unanswered:
                 url_line = (
                     f"[dim]URL (not answering yet):[/dim] [cyan underline]https://{domain}[/cyan underline]\n"
                     f"[dim]Why        :[/dim] {unanswered[-1]['detail']}\n"
-                    f"[dim]Fix        :[/dim] [cyan]rkd instance nginx --env {env}[/cyan]\n"
+                    f"[dim]Fix        :[/dim] [cyan]rkd instance {proxy_name} --env {env}[/cyan]\n"
                 )
-                note = "[dim]Odoo itself is running; the URL depends on Nginx, DNS and the certificate.[/dim]"
+                note = f"[dim]Odoo itself is running; the URL depends on {proxy_name.capitalize()}, DNS and the certificate.[/dim]"
             else:
                 url_line = f"[dim]URL        :[/dim] [cyan underline]https://{domain}[/cyan underline]\n"
-                note = "[dim]If the certificate is missing, run rkd instance nginx --env ENV again once DNS points here.[/dim]"
+                note = f"[dim]If the certificate is missing, run rkd instance {proxy_name} --env {env} once DNS points here.[/dim]"
             body = (
                 f"[bold green]Deployment successful![/bold green]\n\n"
                 f"[dim]Environment:[/dim] {env}\n"
@@ -377,6 +380,12 @@ def instance_nginx(env, email, force, no_certbot):
         raise SystemExit(1)
     if env_config.get("type", "docker") == "native":
         console.print(f'\n[red]"{env}" is a native deploy.[/red] Use type docker to publish it behind Nginx.\n')
+        raise SystemExit(1)
+    if env_config.get("proxy", "traefik") != "nginx":
+        console.print(
+            f'\n[red]"{env}" is configured with proxy: {env_config.get("proxy", "traefik")}.[/red] '
+            f"Use [cyan]rkd instance traefik --env {env}[/cyan], or set proxy: nginx in .rkd/instance.yaml and redeploy.\n"
+        )
         raise SystemExit(1)
     domain = env_config.get("domain", "")
     if not domain:
@@ -453,6 +462,105 @@ def instance_nginx(env, email, force, no_certbot):
     )
     console.print()
     if not ok:
+        raise SystemExit(1)
+
+
+@instance.command(name="traefik")
+@click.option("--env", "-e", required=True, type=click.Choice(["stage", "prod"]), help="Environment whose VPS gets Traefik")
+@click.option("--traefik-dir", default=None, help="Directory on the VPS (default: /opt/traefik)")
+@click.option("--email", default=None, help="Let's Encrypt email (default: letsencrypt_email of the environment)")
+def instance_traefik(env, traefik_dir, email):
+    """Install Traefik on the VPS of an environment (Docker deploys only).
+
+    \b
+    The Odoo container only exposes its port; Traefik is what answers on
+    80/443 and gets the certificate. Safe to run again: files you tuned and
+    the certificates already issued are kept.
+    """
+    from rocketdoo.cli_output import console_progress
+    from rocketdoo.core.instance import proxy_traefik as proxy
+    from rocketdoo.core.instance.config_manager import InstanceConfigManager
+    from rocketdoo.core.instance.ssh_utils import resolve_auth
+    from rocketdoo.core.service import ServiceError
+
+    project_path = Path.cwd()
+    mgr = InstanceConfigManager(project_path)
+    if not mgr.exists():
+        console.print("\n[red]No instance.yaml found. Run rkd instance init first.[/red]\n")
+        raise SystemExit(1)
+    try:
+        env_config = mgr.get_env(env)
+    except Exception as e:
+        console.print(f"\n[red]Error loading config: {e}[/red]\n")
+        raise SystemExit(1)
+    if not env_config:
+        console.print(f'\n[red]Environment "{env}" not found in instance.yaml.[/red]\n')
+        raise SystemExit(1)
+    if env_config.get("type", "docker") == "native":
+        console.print(
+            f'\n[red]"{env}" is a native deploy.[/red] It has no way to use a reverse proxy yet (#211): '
+            "its Odoo answers on port 8069. Use type docker to get Traefik.\n"
+        )
+        raise SystemExit(1)
+    if env_config.get("proxy", "traefik") != "traefik":
+        console.print(
+            f'\n[red]"{env}" is configured with proxy: {env_config.get("proxy")}.[/red] '
+            f"Use [cyan]rkd instance nginx --env {env}[/cyan], or set proxy: traefik in .rkd/instance.yaml and redeploy.\n"
+        )
+        raise SystemExit(1)
+    email = email or env_config.get("letsencrypt_email", "")
+    if not email:
+        console.print(f"\n[red]No Let's Encrypt email.[/red] Pass --email, or set letsencrypt_email for {env}.\n")
+        raise SystemExit(1)
+
+    vps = env_config["vps"]
+    directory = traefik_dir or proxy.TRAEFIK_DIR
+    try:
+        auth = resolve_auth(vps, env, project_path)
+        report = proxy.install(auth, vps, traefik_dir=directory, email=email, on_progress=console_progress(console))
+    except (ServiceError, ValueError) as e:
+        console.print(f"\n[red]{e}[/red]\n")
+        raise SystemExit(1)
+
+    console.print()
+    if report["traefik_foreign"]:
+        attached = "is" if report["foreign_attached"] == "yes" else "is [bold]not[/bold]"
+        console.print(
+            Panel(
+                f"[yellow]Another Traefik is running ({report['traefik_foreign']}); nothing was changed.[/yellow]\n\n"
+                f"It {attached} attached to the traefik-public network. "
+                "Odoo is routed only if it is, with a certificate resolver named letsencrypt.",
+                border_style="yellow",
+                box=box.ROUNDED,
+            )
+        )
+    elif report["ports_taken"]:
+        console.print(
+            Panel(
+                f"[bold red]Port {', '.join(report['ports_taken'])} is already taken on the VPS "
+                "by something that is not this Traefik.[/bold red]\n\nNothing was written. Free it and run this again.",
+                border_style="red",
+                box=box.ROUNDED,
+            )
+        )
+    else:
+        ok = report["started"]
+        console.print(
+            Panel(
+                f"[bold {'green' if ok else 'red'}]Traefik {'is running' if ok else 'did not start'}[/bold "
+                f"{'green' if ok else 'red'}]\n\n"
+                f"[dim]Directory    :[/dim] {directory}\n"
+                f"[dim]Wrote        :[/dim] {', '.join(report['wrote']) or '-'}\n"
+                f"[dim]Kept         :[/dim] {', '.join(report['kept']) or '-'}\n"
+                f"[dim]Ports checked:[/dim] {report['ports_checked']}",
+                border_style="green" if ok else "red",
+                box=box.ROUNDED,
+            )
+        )
+    console.print()
+    # Non-zero when nothing ends up serving this Odoo, so the command can be
+    # chained: a foreign proxy off the network routes nothing either.
+    if report["ports_taken"] or not (report["started"] or report["foreign_attached"] == "yes"):
         raise SystemExit(1)
 
 

@@ -130,7 +130,49 @@ def prompt_ports_until_valid(default_odoo=8069, default_vsc=8888):
             click.echo("\n⬇️  Please enter other ports:\n")
 
 
-def init_from_profile(profile_name: str, project_name: str | None = None, admin_passwd: str | None = None) -> None:
+def ask_deploy_choices(db_mode: str | None = None, proxy: str | None = None) -> dict:
+    """Manexware fork: where PostgreSQL runs on stage/prod, and which proxy publishes Odoo.
+
+    The local environment is not affected (it always has its own postgres
+    container); the answers become the defaults of `rkd instance init`.
+    A value given on the command line is not asked again.
+    """
+    from rocketdoo.core.instance.defaults import DB_MODE_LABELS, DB_MODES, FALLBACK, PROXIES, PROXY_LABELS
+
+    click.echo("\n🚀 Despliegue en VPS (stage / prod) — el entorno local no cambia:")
+    if db_mode is None:
+        choices = [questionary.Choice(DB_MODE_LABELS[m], value=m) for m in DB_MODES]
+        db_mode = questionary.select(
+            "¿PostgreSQL en Docker o en el VPS?",
+            choices=choices,
+            default=next(c for c in choices if c.value == FALLBACK["db_mode"]),
+        ).ask() or FALLBACK["db_mode"]
+    if proxy is None:
+        choices = [questionary.Choice(PROXY_LABELS[p], value=p) for p in PROXIES]
+        proxy = questionary.select(
+            "¿Traefik o Nginx como proxy inverso?",
+            choices=choices,
+            default=next(c for c in choices if c.value == FALLBACK["proxy"]),
+        ).ask() or FALLBACK["proxy"]
+    return {"db_mode": db_mode, "proxy": proxy}
+
+
+def save_deploy_choices(choices: dict | None) -> None:
+    if not choices:
+        return
+    from rocketdoo.core.instance.defaults import save
+
+    path = save(Path(os.getcwd()), **choices)
+    click.echo(f"\n🧭 Despliegue: PostgreSQL {choices['db_mode']}, proxy {choices['proxy']} (guardado en {path.relative_to(os.getcwd())})")
+    click.echo("   Se usan como valores por defecto en: rkd instance init")
+
+
+def init_from_profile(
+    profile_name: str,
+    project_name: str | None = None,
+    admin_passwd: str | None = None,
+    deploy_choices: dict | None = None,
+) -> None:
     """Create a project from a named golden path, without prompting.
 
     This is what `rkd init --profile odoo18-ce` runs, and what lets CI and the
@@ -161,6 +203,7 @@ def init_from_profile(profile_name: str, project_name: str | None = None, admin_
     context.update({"use_private_repos": False, "ssh_key_name": None, "use_third_party_repos": False})
 
     generate_project(context)
+    save_deploy_choices(deploy_choices)
 
     if profile.uses_enterprise:
         try:
@@ -169,11 +212,19 @@ def init_from_profile(profile_name: str, project_name: str | None = None, admin_
             click.echo(f"\n⚠️  Warning: Could not fully configure Enterprise: {e}")
 
 
-def init_project(profile: str | None = None):
+def init_project(profile: str | None = None, db_mode: str | None = None, proxy: str | None = None):
     """Initial configuration assistant for Rocketdoo"""
 
     if profile:
-        init_from_profile(profile)
+        # Unattended: only what the command line says is stored.
+        given = {"db_mode": db_mode, "proxy": proxy}
+        if db_mode or proxy:
+            from rocketdoo.core.instance.defaults import FALLBACK
+
+            given = {k: v or FALLBACK[k] for k, v in given.items()}
+            init_from_profile(profile, deploy_choices=given)
+        else:
+            init_from_profile(profile)
         return
 
     show_welcome()
@@ -295,6 +346,9 @@ def init_project(profile: str | None = None):
     # Ports validations
     odoo_port, vsc_port = prompt_ports_until_valid()
 
+    # Manexware fork: deployment choices for stage/prod
+    deploy_choices = ask_deploy_choices(db_mode=db_mode, proxy=proxy)
+
     # Containers names
     odoo_container = f"odoo-{project_name}"
     db_container = f"db-{project_name}"
@@ -318,6 +372,7 @@ def init_project(profile: str | None = None):
     }
 
     generate_project(context, gitman_sources=gitman_sources, selected_ssh_key=selected_ssh_key)
+    save_deploy_choices(deploy_choices)
 
 
 def generate_project(
