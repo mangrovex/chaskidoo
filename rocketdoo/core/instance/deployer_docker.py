@@ -8,6 +8,7 @@ Build flow (requires SSH agent for gitman private repos):
   VPS   → docker compose up -d
 """
 
+import os
 import shlex
 import shutil
 import subprocess
@@ -20,7 +21,6 @@ from rich.console import Console
 from rocketdoo.cli_output import print_checks
 from rocketdoo.core import addons_path as local_addons
 from rocketdoo.core.gitman_config import gitman_module_paths, gitman_ssh_hosts
-from rocketdoo.core.traefik import NETWORK as TRAEFIK_NETWORK
 
 from . import preflight
 from .config_manager import (
@@ -31,8 +31,9 @@ from .config_manager import (
     WORKERS_BY_ENV,
     db_maxconn,
 )
-from .db_seed import SEEDED_MARK, docker_restore_script, docker_state_script
+from .db_seed import SEEDED_MARK, docker_restore_script, docker_state_script, pg_tool, wait_for_db
 from .enterprise import branch, clone_script
+from .external_db import ExternalDbPasswordMissing, external_password_var, pgpass_line
 from .gitman_remote import GITMAN_DIR
 from .secrets_store import ADMIN_LOGIN_PASSWD, ADMIN_PASSWD, PG_PASS, load, random_password, save
 from .seeding import seed, seed_dir
@@ -55,6 +56,28 @@ _ADMIN_PASSWORD_MARK = "rkd.admin_password_set"
 _PLACEHOLDER = "<generated at deploy time>"
 
 
+def detect_project_name(project_path: Path) -> str:
+    """The `name:` of the project's docker-compose, or the directory name."""
+    try:
+        import yaml as _yaml
+
+        for name in ("docker-compose.yaml", "docker-compose.yml"):
+            p = Path(project_path) / name
+            if p.exists():
+                data = _yaml.safe_load(p.read_text())
+                if data and data.get("name"):
+                    return data["name"]
+    except Exception:
+        pass
+    return Path(project_path).name
+
+
+def instance_slug(project_path: Path, env: str) -> str:
+    """Identifier of one environment, shared by the compose and the Nginx site."""
+    base = detect_project_name(project_path).replace("-", "_").replace(" ", "_").replace(".", "_")
+    return f"{base}_{env}"
+
+
 class DockerInstanceDeployer:
     """
     Deploys a full Odoo instance (stage or prod) to a VPS running Docker.
@@ -65,6 +88,7 @@ class DockerInstanceDeployer:
         ├── {env}/
         │   ├── docker-compose.yml
         │   ├── odoo_pg_pass
+        │   ├── pgpass             ← db_mode external only (0600)
         │   └── config/
         │       └── odoo.conf
         └── gitman.{env}.yml       ← optional
@@ -87,9 +111,18 @@ class DockerInstanceDeployer:
         self.db_name = env_config.get("db_name") or self.db_user
         self.seed_database = env_config.get("seed_database", "")
 
+        # Manexware fork: PostgreSQL outside the compose unless db_mode says otherwise.
+        self.external_db = env_config.get("db_mode", "external") == "external"
+        self.db_host = env_config.get("db_host", "") if self.external_db else "db"
+        self.db_port = int(env_config.get("db_port", 5432)) if self.external_db else 5432
+        self.db_sslmode = env_config.get("db_sslmode", "prefer") if self.external_db else "prefer"
+        # Ports Nginx proxies to; InstanceConfig fills per-environment defaults.
+        self.host_http_port = int(env_config.get("host_http_port") or (8069 if env == "prod" else 8169))
+        self.host_gevent_port = int(env_config.get("host_gevent_port") or (8072 if env == "prod" else 8172))
+
         self.pg = PG_PROFILES.get(env_config.get("pg_profile"), PG_PROFILES["small"])
         self.project_name = self._detect_project_name()
-        self.slug = self.project_name.replace("-", "_").replace(" ", "_")
+        self.slug = self.project_name.replace("-", "_").replace(" ", "_").replace(".", "_")
         self.checks: list[dict] = []
         self._warnings: list[dict] = []
 
@@ -104,6 +137,9 @@ class DockerInstanceDeployer:
 
         try:
             return self._run(dry_run)
+        except ExternalDbPasswordMissing as error:
+            console.print(f"[red]✗ {error}[/red]")
+            return False
         finally:
             self._repeat_warnings()
 
@@ -197,6 +233,13 @@ class DockerInstanceDeployer:
         pg_pass = stored.get(PG_PASS)
         admin_passwd = self.cfg.get("admin_passwd") or stored.get(ADMIN_PASSWD)
 
+        # An external server's role already has a password, chosen by whoever
+        # administers it: it is supplied, never generated.
+        if not pg_pass and self.external_db:
+            pg_pass = os.environ.get(external_password_var(self.env), "")
+            if pg_pass:
+                console.print(f"[dim]  Using the PostgreSQL password from ${external_password_var(self.env)}[/dim]")
+
         if not pg_pass and not dry_run:
             pg_pass = self._read_remote_pg_pass()
             if pg_pass:
@@ -206,6 +249,12 @@ class DockerInstanceDeployer:
             return {"pg_pass": pg_pass or _PLACEHOLDER, "admin_passwd": admin_passwd or _PLACEHOLDER}
 
         generated = []
+        if not pg_pass and self.external_db:
+            raise ExternalDbPasswordMissing(
+                f"No password for the external PostgreSQL role {self.db_user}. Run rkd instance init, "
+                f"or export {external_password_var(self.env)}, or add {PG_PASS}=... to "
+                f".rkd/secrets/instance_{self.env}_db.env"
+            )
         if not pg_pass:
             pg_pass = random_password(32)
             generated.append("odoo_pg_pass")
@@ -270,7 +319,12 @@ class DockerInstanceDeployer:
             "slug": f"{self.slug}_{self.env}",
             "odoo_tag": self.cfg.get("odoo_tag", self.cfg.get("odoo_version", "17.0")),
             "domain": self.cfg.get("domain", ""),
-            "traefik_email": self.cfg.get("traefik_email", ""),
+            "external_db": self.external_db,
+            "db_host": self.db_host,
+            "db_port": self.db_port,
+            "db_sslmode": self.db_sslmode,
+            "host_http_port": self.host_http_port,
+            "host_gevent_port": self.host_gevent_port,
             "db_user": self.db_user,
             "db_name": self.db_name,
             # The conf used to say `db_password = False`, and the image's
@@ -296,7 +350,10 @@ class DockerInstanceDeployer:
             "log_level": LOG_LEVEL_BY_ENV.get(self.env, "info"),
             "limit_memory_hard": mem["hard"],
             "limit_memory_soft": mem["soft"],
-            "db_maxconn": db_maxconn(self.pg["max_connections"], workers),
+            "db_maxconn": db_maxconn(
+                int(self.cfg.get("db_max_connections", 100)) if self.external_db else self.pg["max_connections"],
+                workers,
+            ),
         }
 
         # Dockerfile.{env}
@@ -317,6 +374,12 @@ class DockerInstanceDeployer:
 
         # {env}/odoo_pg_pass — reused across deploys, never regenerated
         (env_dir / "odoo_pg_pass").write_text(creds["pg_pass"])
+
+        # {env}/pgpass — libpq password file for the one-off client containers
+        if self.external_db:
+            (env_dir / "pgpass").write_text(
+                pgpass_line(self.db_host, self.db_port, self.db_user, creds["pg_pass"]) + "\n"
+            )
 
         # gitman config (if enabled and local file exists)
         if use_gitman and gitman_config:
@@ -365,7 +428,9 @@ class DockerInstanceDeployer:
             env=self.env,
             source_db=self.seed_database,
             db_name=self.db_name,
-            state_script=docker_state_script(compose_dir, db_name=self.db_name, db_user=self.db_user),
+            state_script=docker_state_script(
+                compose_dir, db_name=self.db_name, db_user=self.db_user, external=self.external_db
+            ),
             restore_script=lambda has_filestore: docker_restore_script(
                 compose_dir,
                 directory,
@@ -375,6 +440,7 @@ class DockerInstanceDeployer:
                 db_user=self.db_user,
                 domain=self.cfg.get("domain", ""),
                 has_filestore=has_filestore,
+                external=self.external_db,
             ),
             run=lambda script, timeout: self._ssh_capture("bash -s", input=script, timeout=timeout),
             ssh=self._ssh,
@@ -402,16 +468,8 @@ class DockerInstanceDeployer:
         if not self._ssh(ensure_dirs_command(dirs, self.remote_path, '"$(id -u):$(id -g)"')):
             console.print(f"[red]✗ Could not create {self.remote_path} on the VPS[/red]")
             return False
-
-        # The compose declares this network as external, so Compose refuses to
-        # create it: on a VPS that has never run Traefik, every step from the
-        # database onwards fails with "network traefik-public declared as
-        # external, but could not be found".
-        if not self._ssh(
-            f"docker network inspect {TRAEFIK_NETWORK} >/dev/null 2>&1 || docker network create {TRAEFIK_NETWORK}"
-        ):
-            console.print(f"[red]✗ Could not create the Docker network {TRAEFIK_NETWORK} on the VPS[/red]")
-            return False
+        # Manexware fork: no shared proxy network. Nginx runs on the host and
+        # reaches Odoo through the ports published on 127.0.0.1.
         return True
 
     def _transfer(self, tmp: Path) -> bool:
@@ -431,6 +489,9 @@ class DockerInstanceDeployer:
         # readable by every user on the VPS. Docker reads it as root to mount
         # the secret, so restricting it costs nothing.
         self._ssh(f"chmod 600 {self.remote_path}/{self.env}/odoo_pg_pass")
+        if self.external_db:
+            # libpq ignores a password file that group or others can read.
+            self._ssh(f"chmod 600 {self.remote_path}/{self.env}/pgpass")
 
         # gitman config (if present in tmp)
         if self.cfg.get("use_gitman"):
@@ -556,61 +617,68 @@ class DockerInstanceDeployer:
         """
         if self.seed_database and not self._seed_database():
             return False
-        return self._ssh(
-            "bash -s",
-            timeout=1800,
-            input=(
-                # The braces are load-bearing: bash reads a compound command
-                # whole before running any of it, and `docker compose` reads
-                # the stdin it inherits -- which here is the script itself.
-                # Without them `up -d db` swallows everything below it and the
-                # step reports success having done nothing. Verified.
-                "{\n"
-                "set -e\n"
-                f'cd "{self.remote_path}/{self.env}"\n'
-                "docker compose up -d db\n"
-                f"for _ in $(seq 1 {_DB_READY_RETRIES}); do\n"
-                f'  if docker compose exec -T db pg_isready -U "{self.db_user}" -q; then break; fi\n'
-                "  sleep 2\n"
-                "done\n"
-                # -d postgres, the database the compose asks the image to
-                # create: without it psql defaults to one named after the
-                # role, which is the database being looked for.
-                f"if ! docker compose exec -T db psql -U {self.db_user} -d postgres"
-                f" -tAc \"SELECT 1 FROM pg_database WHERE datname = '{self.db_name}'\" | grep -q 1; then\n"
-                f"  docker compose exec -T db createdb -U {self.db_user}"
-                f' -E UTF8 -T template0 --lc-collate=C -O "{self.db_user}" "{self.db_name}"\n'
-                "fi\n"
-                # `base` installed, not merely the table existing: Odoo
-                # commits ir_module_module seconds into the install and
-                # finishes minutes later, so an interrupted first attempt
-                # would otherwise look done forever. psql's own error on a
-                # database without the table is stderr, and an empty answer
-                # here means "install it" either way.
-                f'if [ -z "$(docker compose exec -T db psql -U {self.db_user} -d "{self.db_name}" -tAc'
-                " \"SELECT 1 FROM ir_module_module WHERE name = 'base' AND state = 'installed'\" 2>/dev/null)\" ]; then\n"
-                f'  docker compose run --rm -T -l traefik.enable=false web odoo -d "{self.db_name}" -i base'
-                " --workers=0 --max-cron-threads=0 --stop-after-init --logfile= < /dev/null\n"
-                "fi\n"
-                # Its own guard, and a mark of its own: an install that
-                # succeeded while this step failed must be retried, or the
-                # admin user keeps the password `base` ships with.
-                # A seeded database never carries rkd.admin_password_set, so
-                # without the second key this step would replace the password
-                # of the customer's admin user with a generated one.
-                f'if [ -z "$(docker compose exec -T db psql -U {self.db_user} -d "{self.db_name}" -tAc'
-                f" \"SELECT 1 FROM ir_config_parameter WHERE key IN ('{_ADMIN_PASSWORD_MARK}', '{SEEDED_MARK}')\""
-                ' 2>/dev/null)" ]; then\n'
-                f'  docker compose run --rm -T -l traefik.enable=false web odoo shell -d "{self.db_name}"'
-                " --logfile= <<'RKD_PY'\n"
-                f"env.ref('base.user_admin').write({{'password': '{self._resolve_admin_login_password()}'}})\n"
-                f"env['ir.config_parameter'].sudo().set_param('{_ADMIN_PASSWORD_MARK}', '1')\n"
-                "env.cr.commit()\n"
-                "RKD_PY\n"
-                "fi\n"
-                "}\n"
-            ),
-        )
+        return self._ssh("bash -s", timeout=1800, input=self._ensure_database_script())
+
+    def _ensure_database_script(self) -> str:
+        """The `bash -s` script of step 5, for either database mode.
+
+        Manexware fork: with db_mode external the client tools run in one-off
+        containers of the Odoo image (see db_seed.pg_tool) instead of inside a
+        `db` service, and nothing is started for PostgreSQL. The role must
+        exist on the external server; it needs CREATEDB only if the database
+        does not exist yet.
+        """
+        psql = pg_tool("psql", external=self.external_db, db_user=self.db_user)
+        createdb = pg_tool("createdb", external=self.external_db, db_user=self.db_user)
+        # --no-deps: with an external server there is no `db` to start, and
+        # in container mode it is already up from the lines above.
+        odoo_run = "docker compose run --rm -T --no-deps web odoo"
+        lines = [
+            # The braces are load-bearing: bash reads a compound command
+            # whole before running any of it, and `docker compose` reads
+            # the stdin it inherits -- which here is the script itself.
+            "{",
+            "set -e",
+            f'cd "{self.remote_path}/{self.env}"',
+        ]
+        if not self.external_db:
+            lines.append("docker compose up -d db")
+        lines += [
+            wait_for_db(external=self.external_db, db_user=self.db_user, ready_retries=_DB_READY_RETRIES),
+            f"if ! {psql} -d postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = '{self.db_name}'\""
+            " </dev/null | grep -q 1; then",
+        ]
+        if self.external_db:
+            lines.append(
+                f"  echo 'Creating database {self.db_name} on {self.db_host}:{self.db_port}"
+                f" (the role {self.db_user} needs CREATEDB, or create it beforehand"
+                f" with OWNER {self.db_user})' >&2"
+            )
+        lines += [
+            f'  {createdb} -E UTF8 -T template0 --lc-collate=C -O "{self.db_user}" "{self.db_name}" </dev/null',
+            "fi",
+            # `base` installed, not merely the table existing: an interrupted
+            # first attempt would otherwise look done forever.
+            f'if [ -z "$({psql} -d "{self.db_name}" -tAc'
+            " \"SELECT 1 FROM ir_module_module WHERE name = 'base' AND state = 'installed'\" 2>/dev/null </dev/null)\" ]; then",
+            f'  {odoo_run} -d "{self.db_name}" -i base --workers=0 --max-cron-threads=0 --stop-after-init --logfile= < /dev/null',
+            "fi",
+            # Its own guard, and a mark of its own: an install that succeeded
+            # while this step failed must be retried, or the admin user keeps
+            # the password `base` ships with. A seeded database never carries
+            # rkd.admin_password_set, hence the second key.
+            f'if [ -z "$({psql} -d "{self.db_name}" -tAc'
+            f" \"SELECT 1 FROM ir_config_parameter WHERE key IN ('{_ADMIN_PASSWORD_MARK}', '{SEEDED_MARK}')\""
+            ' 2>/dev/null </dev/null)" ]; then',
+            f'  {odoo_run} shell -d "{self.db_name}" --logfile= <<\'RKD_PY\'',
+            f"env.ref('base.user_admin').write({{'password': '{self._resolve_admin_login_password()}'}})",
+            f"env['ir.config_parameter'].sudo().set_param('{_ADMIN_PASSWORD_MARK}', '1')",
+            "env.cr.commit()",
+            "RKD_PY",
+            "fi",
+            "}",
+        ]
+        return "\n".join(lines) + "\n"
 
     def _verify_odoo_answers(self) -> bool:
         """
@@ -677,18 +745,7 @@ class DockerInstanceDeployer:
     # ─── utils ───────────────────────────────────────────────────────────────
 
     def _detect_project_name(self) -> str:
-        try:
-            import yaml as _yaml
-
-            for name in ("docker-compose.yaml", "docker-compose.yml"):
-                p = self.project_path / name
-                if p.exists():
-                    data = _yaml.safe_load(p.read_text())
-                    if data and data.get("name"):
-                        return data["name"]
-        except Exception:
-            pass
-        return self.project_path.name
+        return detect_project_name(self.project_path)
 
     def health_check(self) -> bool:
         """Verify Odoo is responding on the VPS."""

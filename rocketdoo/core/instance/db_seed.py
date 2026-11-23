@@ -219,20 +219,50 @@ def parse_state(stdout: str) -> str:
     return ""
 
 
-def docker_state_script(compose_dir: str, *, db_name: str, db_user: str, ready_retries: int = 60) -> str:
-    """Start the `db` service, wait for it, and say what state `db_name` is in.
+# Manexware fork: with an external PostgreSQL there is no `db` service to
+# `exec` into. The client tools run in a one-off container of the Odoo image
+# (which ships postgresql-client), as root so they can read the 0600 pgpass
+# secret. Connection details come from PGHOST/PGPORT/PGUSER/PGSSLMODE/PGPASSFILE
+# set on the `web` service. `{prefix} psql{auth}` must read as
+# `... --entrypoint psql web`, hence the service name in `auth`.
+EXTERNAL_PREFIX = "docker compose run --rm -T --no-deps --user root --entrypoint"
+EXTERNAL_AUTH = " web"
+
+
+def pg_tool(tool: str, *, external: bool, db_user: str) -> str:
+    """The command line that runs a PostgreSQL client tool against the instance's server."""
+    if external:
+        return f"{EXTERNAL_PREFIX} {tool}{EXTERNAL_AUTH}"
+    return f"docker compose exec -T db {tool} -U {shlex.quote(db_user)}"
+
+
+def wait_for_db(*, external: bool, db_user: str, ready_retries: int = 60) -> str:
+    """A one-line loop that waits until the server accepts connections."""
+    return (
+        f"for _ in $(seq 1 {ready_retries}); do "
+        f"if {pg_tool('pg_isready', external=external, db_user=db_user)} -q </dev/null; then break; fi; "
+        "sleep 2; done"
+    )
+
+
+def docker_state_script(
+    compose_dir: str, *, db_name: str, db_user: str, ready_retries: int = 60, external: bool = False
+) -> str:
+    """Start the `db` service (or reach the external server), wait for it, and say what state `db_name` is in.
 
     Asked before anything is dumped or shipped, so that a redeploy of an
     already seeded instance costs one SSH round trip instead of a transfer.
     """
-    wait = (
-        f"for _ in $(seq 1 {ready_retries}); do "
-        f"if docker compose exec -T db pg_isready -U {shlex.quote(db_user)} -q; then break; fi; sleep 2; done"
-    )
+    wait = wait_for_db(external=external, db_user=db_user, ready_retries=ready_retries)
+    start = "" if external else "docker compose up -d db\n"
+    if external:
+        prefix, auth = EXTERNAL_PREFIX, EXTERNAL_AUTH
+    else:
+        prefix, auth = "docker compose exec -T db", f" -U {shlex.quote(db_user)}"
     return _state_script(
-        prefix="docker compose exec -T db",
-        auth=f" -U {shlex.quote(db_user)}",
-        prologue=f"cd {shlex.quote(compose_dir)}\ndocker compose up -d db\n{wait}",
+        prefix=prefix,
+        auth=auth,
+        prologue=f"cd {shlex.quote(compose_dir)}\n{start}{wait}",
         db_name=db_name,
     )
 
@@ -251,12 +281,17 @@ def docker_restore_script(
     db_user: str,
     domain: str = "",
     has_filestore: bool = True,
+    external: bool = False,
 ) -> str:
-    """Restore the seed into the `db` service of the compose at `compose_dir`."""
+    """Restore the seed into the `db` service of the compose at `compose_dir`, or the external server."""
+    if external:
+        prefix, auth = EXTERNAL_PREFIX, EXTERNAL_AUTH
+    else:
+        prefix, auth = "docker compose exec -T db", f" -U {shlex.quote(db_user)}"
     return _script(
-        prefix="docker compose exec -T db",
-        auth=f" -U {shlex.quote(db_user)}",
-        filestore_runner="docker compose run --rm -T --no-deps -l traefik.enable=false --entrypoint sh web -c",
+        prefix=prefix,
+        auth=auth,
+        filestore_runner="docker compose run --rm -T --no-deps --entrypoint sh web -c",
         prologue=f"cd {shlex.quote(compose_dir)}",
         seed_dir=seed_dir,
         env=env,

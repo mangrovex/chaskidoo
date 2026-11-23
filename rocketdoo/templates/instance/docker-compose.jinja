@@ -1,5 +1,7 @@
 name: {{ project_name }}-{{ environment }}
 
+# Manexware fork: no proxy container. Odoo is published on 127.0.0.1 only and the
+# host's Nginx (rkd instance nginx) terminates TLS and proxies to it.
 services:
   web:
     build:
@@ -8,16 +10,32 @@ services:
     image: {{ project_name }}-{{ environment }}
     container_name: {{ project_name }}-{{ environment }}
     restart: unless-stopped
+{% if not external_db %}
     depends_on:
       db:
         condition: service_healthy
-    expose:
-      - "8069"
-      - "8072"
+{% endif %}
+    ports:
+      - "127.0.0.1:{{ host_http_port }}:8069"
+      - "127.0.0.1:{{ host_gevent_port }}:8072"
+{% if external_db %}
+    # Lets db_host: host.docker.internal reach a PostgreSQL on the VPS itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+{% endif %}
     environment:
-      HOST: db
-      PORT: 5432
+      HOST: {{ db_host }}
+      PORT: {{ db_port }}
       USER: {{ db_user }}
+{% if external_db %}
+      # Used only by the psql/createdb/pg_restore one-off containers rkd runs
+      # as root; Odoo itself reads its credentials from odoo.conf.
+      PGHOST: {{ db_host }}
+      PGPORT: {{ db_port }}
+      PGUSER: {{ db_user }}
+      PGSSLMODE: {{ db_sslmode }}
+      PGPASSFILE: /run/secrets/pgpass
+{% endif %}
     volumes:
       - {{ project_name }}-{{ environment }}-data:/var/lib/odoo
       - ../extra-addons:/mnt/extra-addons
@@ -25,26 +43,14 @@ services:
       - ../enterprise:/mnt/enterprise
 {% endif %}
       - ./config/odoo.conf:/etc/odoo/odoo.conf
+{% if external_db %}
+    secrets:
+      - pgpass
+{% else %}
     networks:
-      - traefik-public
+      - default
       - {{ environment }}-internal
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik-public"
-      - "traefik.http.routers.{{ slug }}-http.rule=Host(`{{ domain }}`)"
-      - "traefik.http.routers.{{ slug }}-http.entrypoints=web"
-      - "traefik.http.routers.{{ slug }}-http.middlewares=redirect-https"
-      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
-      - "traefik.http.routers.{{ slug }}.rule=Host(`{{ domain }}`)"
-      - "traefik.http.routers.{{ slug }}.entrypoints=websecure"
-      - "traefik.http.routers.{{ slug }}.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.{{ slug }}.service={{ slug }}-svc"
-      - "traefik.http.services.{{ slug }}-svc.loadbalancer.server.port=8069"
-      - "traefik.http.routers.{{ slug }}-lp.rule=Host(`{{ domain }}`) && (PathPrefix(`/longpolling`) || PathPrefix(`/websocket`))"
-      - "traefik.http.routers.{{ slug }}-lp.entrypoints=websecure"
-      - "traefik.http.routers.{{ slug }}-lp.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.{{ slug }}-lp.service={{ slug }}-lp-svc"
-      - "traefik.http.services.{{ slug }}-lp-svc.loadbalancer.server.port=8072"
+{% endif %}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8069/web/health"]
       interval: 30s
@@ -52,6 +58,7 @@ services:
       retries: {{ 10 if environment == 'prod' else 5 }}
       start_period: 60s
     stop_grace_period: 1m
+{% if not external_db %}
 
   db:
     image: postgres:{{ db_version }}
@@ -90,17 +97,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+{% endif %}
 
 volumes:
   {{ project_name }}-{{ environment }}-data:
+{% if not external_db %}
   {{ project_name }}-{{ environment }}-db:
+{% endif %}
 
 secrets:
+{% if external_db %}
+  pgpass:
+    file: ./pgpass
+{% else %}
   postgresql_password:
     file: ./odoo_pg_pass
 
 networks:
-  traefik-public:
-    external: true
   {{ environment }}-internal:
     driver: bridge
+{% endif %}

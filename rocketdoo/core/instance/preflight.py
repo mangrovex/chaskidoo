@@ -26,6 +26,7 @@ from .config_manager import (
     invalid_identifiers,
 )
 from .enterprise import REPO as ENTERPRISE_REPO
+from .external_db import DOCKER_HOST_ALIAS, tcp_probe_script
 from .ssh_utils import build_ssh_cmd
 
 Check = dict
@@ -35,7 +36,6 @@ _MIN_FREE_KB = 5 * 1024 * 1024
 _MIB = 1024 * 1024
 _GIT_PROBE_SECONDS = 30
 INSTALL_SCRIPT = "install_dependencies.sh"
-_TRAEFIK_NETWORK = "traefik-public"
 _SENTINEL = "done"
 
 
@@ -131,10 +131,19 @@ def _remote_script(cfg: dict, repos: list[str]) -> str:
         lines += [
             "echo docker_ok=$(docker info >/dev/null 2>&1 && echo yes || echo no)",
             "echo compose=$(docker compose version --short 2>/dev/null </dev/null)",
-            "echo traefik_running=$(docker ps 2>/dev/null | grep -qi traefik && echo yes || echo no)",
-            f"echo traefik_attached=$(docker ps --filter network={_TRAEFIK_NETWORK} 2>/dev/null"
-            " | grep -qi traefik && echo yes || echo no)",
+            # Manexware fork: Nginx on the host instead of a Traefik container.
+            "echo nginx_installed=$(command -v nginx >/dev/null 2>&1 && echo yes || echo no)",
+            "echo nginx_running=$( (systemctl is-active --quiet nginx 2>/dev/null || pgrep -x nginx >/dev/null 2>&1)"
+            " && echo yes || echo no)",
         ]
+        if cfg.get("domain"):
+            # The site rkd writes names the domain; one written by hand counts too.
+            lines.append(
+                f"echo nginx_site=$(grep -rqsw -- {shlex.quote('server_name ' + cfg['domain'])} /etc/nginx/"
+                " 2>/dev/null && echo yes || echo no)"
+            )
+        if _external_db(cfg) and cfg.get("db_host"):
+            lines += tcp_probe_script(cfg["db_host"], int(cfg.get("db_port", 5432)))
     if cfg.get("seed_database") and cfg.get("type", "docker") != "docker":
         lines.append("echo pg_major=$(ls /usr/lib/postgresql 2>/dev/null | sort -n | tail -1)")
     for url in repos:
@@ -214,7 +223,10 @@ def _memory_check(cfg: dict, remote: dict, env: str) -> Check:
     """
     workers = WORKERS_BY_ENV.get(env, WORKERS_BY_ENV["stage"])
     soft = MEMORY_BY_ENV.get(env, MEMORY_BY_ENV["stage"])["soft"] // _MIB
-    if cfg.get("type", "docker") == "docker":
+    if _external_db(cfg):
+        # PostgreSQL does not run in this compose: its memory is not ours to count.
+        buffers = 0
+    elif cfg.get("type", "docker") == "docker":
         buffers = _mib(PG_PROFILES.get(cfg.get("pg_profile"), PG_PROFILES["small"])["shared_buffers"])
     else:
         buffers = _mib(DEBIAN_PG_SHARED_BUFFERS)
@@ -260,6 +272,10 @@ def _postgresql_version_check(local: dict, target: int, where: str) -> Check:
         f"A dump from a newer PostgreSQL does not restore into an older one. Raise the server to {source} or "
         f"later (db_version on a Docker deploy), or choose no seed database.",
     )
+
+
+def _external_db(cfg: dict) -> bool:
+    return cfg.get("type", "docker") == "docker" and cfg.get("db_mode", "external") == "external"
 
 
 def _remote_checks(cfg: dict, remote: dict, env: str, local: dict) -> list[Check]:
@@ -371,22 +387,40 @@ def _remote_checks(cfg: dict, remote: dict, env: str, local: dict) -> list[Check
     if cfg.get("seed_database") and not docker:
         checks.append(_postgresql_version_check(local, _major(remote.get("pg_major")), "the VPS cluster"))
     if docker and cfg.get("domain"):
-        running = remote.get("traefik_running") == "yes"
-        attached = remote.get("traefik_attached") == "yes"
-        if not running:
-            detail = "no Traefik container found on the VPS"
-        elif not attached:
-            detail = f"a Traefik runs on the VPS but is not attached to the {_TRAEFIK_NETWORK} network"
+        installed = remote.get("nginx_installed") == "yes"
+        running = remote.get("nginx_running") == "yes"
+        site = remote.get("nginx_site") == "yes"
+        if not installed:
+            detail = "Nginx is not installed on the VPS"
+        elif not running:
+            detail = "Nginx is installed but not running"
+        elif not site:
+            detail = f"Nginx runs but no site has server_name {cfg['domain']}"
         else:
-            detail = "Traefik is running on the VPS"
+            detail = f"Nginx serves {cfg['domain']}"
         checks.append(
             _check(
-                "traefik",
+                "nginx",
                 "warn",
-                running and attached,
+                installed and running and site,
                 detail,
-                f"Without Traefik on {_TRAEFIK_NETWORK}, {cfg['domain']} will not answer. "
-                f"Run: rkd instance traefik --env {env}",
+                f"Without an Nginx site for {cfg['domain']} the domain will not answer. "
+                f"Run: rkd instance nginx --env {env}",
+            )
+        )
+    if _external_db(cfg) and cfg.get("db_host"):
+        host, port = cfg["db_host"], int(cfg.get("db_port", 5432))
+        reached = remote.get("db_tcp") == "yes"
+        via = f" (probed at {remote.get('db_target')})" if host == DOCKER_HOST_ALIAS and remote.get("db_target") else ""
+        checks.append(
+            _check(
+                "external postgresql",
+                "warn",
+                reached,
+                f"the VPS reaches {host}:{port}{via}" if reached else f"the VPS cannot open a TCP connection to {host}:{port}{via}",
+                "Check the server's listen_addresses and pg_hba.conf, and any firewall or security group between "
+                "the VPS and the database. For a PostgreSQL on the VPS itself use db_host: host.docker.internal "
+                "and allow the Docker networks (e.g. 172.16.0.0/12) in pg_hba.conf.",
             )
         )
     return checks
@@ -401,9 +435,9 @@ def public_url_check(domain: str, output: str, *, env: str) -> Check:
 
     `output` holds `http=<code>:<curl exit>` and `https=<code>:<curl exit>`.
     Two requests because one cannot tell apart "nothing listens" from
-    "Traefik routes but the certificate is not there yet": a 3xx on plain
-    HTTP proves the router matched before Let's Encrypt has issued anything,
-    while curl exits 60/35 on https for the same reason.
+    "Nginx routes but the certificate is not there yet". certbot adds the
+    HTTP->HTTPS redirect together with the certificate, so a 200 on plain
+    HTTP with https failing also means "no certificate yet".
     """
     seen = {}
     for line in output.splitlines():
@@ -413,7 +447,7 @@ def public_url_check(domain: str, output: str, *, env: str) -> Check:
             seen[scheme] = (code.strip(), rc.strip())
     http_code, _ = seen.get("http", ("000", ""))
     https_code, https_rc = seen.get("https", ("000", ""))
-    fix = f"Run: rkd instance traefik --env {env}"
+    fix = f"Run: rkd instance nginx --env {env}"
 
     if https_rc == "0" and https_code not in _PROXY_ERROR_CODES and https_code != "000":
         return _check("public url", "warn", True, f"https://{domain} answers ({https_code})")
@@ -422,17 +456,17 @@ def public_url_check(domain: str, output: str, *, env: str) -> Check:
             "public url",
             "warn",
             False,
-            f"Traefik answers {https_code if https_code in _PROXY_ERROR_CODES else http_code} but does not reach Odoo",
-            f"The labels or the {_TRAEFIK_NETWORK} network do not match this Traefik: check its entrypoints "
-            f"and certificate resolver names, or {fix.lower()}",
+            f"Nginx answers {https_code if https_code in _PROXY_ERROR_CODES else http_code} but does not reach Odoo",
+            "Check that the upstream ports in the Nginx site match host_http_port / host_gevent_port of this "
+            f"environment and that the container is up (docker compose ps), or {fix.lower()}",
         )
-    if http_code.startswith("3"):
+    if http_code.startswith(("2", "3")):
         return _check(
             "public url",
             "warn",
             False,
-            f"Traefik routes {domain} but the certificate is not available yet",
-            "Let's Encrypt can take a few minutes, and needs DNS pointing at this VPS and ports 80 and 443 open.",
+            f"Nginx routes {domain} but there is no certificate yet",
+            f"certbot needs DNS pointing at this VPS and ports 80 and 443 open. {fix}",
         )
     return _check(
         "public url",

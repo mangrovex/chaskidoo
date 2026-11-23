@@ -18,13 +18,26 @@ AuthMethod = Literal["ssh_key", "password"]
 DeploymentType = Literal["docker", "native"]
 EnterpriseSource = Literal["rsync", "clone"]
 PGProfileName = Literal["small", "medium", "large"]
+# Manexware fork: where PostgreSQL lives for a Docker deploy.
+#   external  -> a server outside the compose (managed service, a dedicated
+#                host, or the VPS's own cluster via host.docker.internal)
+#   container -> upstream behaviour, a `db` service in the compose
+DBMode = Literal["external", "container"]
+SSLMode = Literal["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]
 
 NATIVE_ADDONS_PATH = "/opt/odoo/extra-addons"
 
-# Flat keys the GUI used, mapped onto the canonical names.
+# Host ports Nginx proxies to, published on 127.0.0.1 only. Different per
+# environment so stage and prod can share a VPS.
+DEFAULT_HOST_PORTS = {"prod": (8069, 8072), "stage": (8169, 8172)}
+_FALLBACK_HOST_PORTS = (8269, 8272)
+
+# Flat keys the GUI used, mapped onto the canonical names. `traefik_email`
+# is what upstream rocketdoo wrote; this fork calls it letsencrypt_email.
 _LEGACY_ALIASES = {
     "password_ref": "password",
-    "email": "traefik_email",
+    "email": "letsencrypt_email",
+    "traefik_email": "letsencrypt_email",
 }
 
 # Keys that belong to the connection, wherever they were written.
@@ -83,8 +96,24 @@ class InstanceEnvironment(BaseModel):
     odoo_version: str = "17.0"
     odoo_tag: str = ""
     domain: str = ""
-    traefik_email: str = ""
+    letsencrypt_email: str = ""
 
+    # Ports on the VPS (bound to 127.0.0.1) that Nginx proxies to.
+    # 0 means "derive from the environment name" (see InstanceConfig).
+    host_http_port: int = 0
+    host_gevent_port: int = 0
+
+    db_mode: DBMode = "external"
+    # Only for db_mode external. Use `host.docker.internal` for a PostgreSQL
+    # running on the VPS itself (outside Docker).
+    db_host: str = ""
+    db_port: int = 5432
+    db_sslmode: SSLMode = "prefer"
+    # max_connections of the external server, to size db_maxconn.
+    db_max_connections: int = 100
+
+    # For db_mode external this is the version of the external server; it is
+    # what a seed dump is compared against.
     db_version: str = "16"
     # Empty means "derive from the environment name", which InstanceConfig
     # does below. A literal default here would be a second answer to the
@@ -97,7 +126,8 @@ class InstanceEnvironment(BaseModel):
 
     # Only meaningful with a reverse proxy in front; a native deploy has
     # none today, and trusting X-Forwarded-* without one lets any caller
-    # spoof its address.
+    # spoof its address. (Docker deploys always set proxy_mode = True in
+    # odoo.conf: Nginx is in front and Odoo only listens on 127.0.0.1.)
     proxy_mode: bool = False
 
     # A local database to restore into this environment; empty means a new one.
@@ -142,17 +172,41 @@ class InstanceEnvironment(BaseModel):
 
         return normalised
 
+    @field_validator("db_port", "host_http_port", "host_gevent_port")
+    @classmethod
+    def _port_or_zero(cls, value: int) -> int:
+        if not 0 <= value <= 65535:
+            raise ValueError(f"port must be between 1 and 65535, got {value}")
+        return value
+
+    @field_validator("db_host")
+    @classmethod
+    def _plain_host(cls, value: str) -> str:
+        # It ends up in odoo.conf, a pgpass file and an nginx-free shell
+        # probe: a hostname or an address, nothing else.
+        if value and not all(c.isalnum() or c in ".-_:[]" for c in value):
+            raise ValueError(f"db_host must be a hostname or an IP address, got {value!r}")
+        return value
+
     @model_validator(mode="after")
     def _fill_derived_defaults(self) -> "InstanceEnvironment":
         if not self.odoo_tag:
             self.odoo_tag = self.odoo_version
         if not self.db_name:
             self.db_name = self.db_user
+        if self.host_http_port and self.host_http_port == self.host_gevent_port:
+            raise ValueError("host_http_port and host_gevent_port must differ")
         return self
+
+    @property
+    def external_db(self) -> bool:
+        return self.type == "docker" and self.db_mode == "external"
 
     @property
     def is_deployable(self) -> bool:
         """Whether a deploy could be attempted with what is configured."""
+        if self.external_db and not self.db_host:
+            return False
         return self.vps.is_complete and (self.type == "native" or bool(self.domain))
 
     def missing_fields(self) -> list[str]:
@@ -166,6 +220,8 @@ class InstanceEnvironment(BaseModel):
             missing.append("vps.password")
         if self.type != "native" and not self.domain:
             missing.append("domain")
+        if self.external_db and not self.db_host:
+            missing.append("db_host")
         return missing
 
 
@@ -211,6 +267,12 @@ class InstanceConfig(BaseModel):
             if isinstance(env, dict) and not env.get("remote_path"):
                 native = env.get("type") == "native"
                 env = {**env, "remote_path": NATIVE_ADDONS_PATH if native else f"/opt/odoo-{name}"}
+            if isinstance(env, dict):
+                http, gevent = DEFAULT_HOST_PORTS.get(name, _FALLBACK_HOST_PORTS)
+                if not env.get("host_http_port"):
+                    env = {**env, "host_http_port": http}
+                if not env.get("host_gevent_port"):
+                    env = {**env, "host_gevent_port": gevent}
             named[name] = env
         return {**data, "environments": named}
 

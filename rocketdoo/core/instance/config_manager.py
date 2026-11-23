@@ -279,12 +279,40 @@ class InstanceConfigManager:
 
         console.print("\n[bold]Odoo[/bold]")
         odoo_version = Prompt.ask("Odoo version", default=project.odoo_version or "17.0")
-        odoo_tag = domain = traefik_email = db_version = ""
+        odoo_tag = domain = letsencrypt_email = db_version = ""
+        db_mode, db_host, db_port, db_sslmode, db_max_connections = "external", "", 5432, "prefer", 100
         if docker:
             odoo_tag = Prompt.ask("Docker image tag", default=odoo_version)
             domain = Prompt.ask("Domain (e.g. erp.mycompany.com)")
-            traefik_email = Prompt.ask("Email for Let's Encrypt")
-            db_version = Prompt.ask("PostgreSQL version", default=project.db_version or "16")
+            letsencrypt_email = Prompt.ask("Email for Let's Encrypt (certbot)")
+
+            console.print("\n[bold]PostgreSQL[/bold]")
+            db_mode = questionary.select(
+                "Where does PostgreSQL run?",
+                choices=[
+                    questionary.Choice("External server (recommended: managed service, DB host, or the VPS's own cluster)", value="external"),
+                    questionary.Choice("Container in the compose (upstream rocketdoo behaviour)", value="container"),
+                ],
+                style=_custom_style,
+            ).ask() or "external"
+            if db_mode == "external":
+                console.print(
+                    "[dim]For a PostgreSQL installed on the VPS itself (outside Docker) use host.docker.internal "
+                    "and allow the Docker networks in pg_hba.conf.[/dim]"
+                )
+                db_host = Prompt.ask("PostgreSQL host")
+                db_port = int(Prompt.ask("PostgreSQL port", default="5432"))
+                db_sslmode = questionary.select(
+                    "SSL mode:",
+                    choices=["prefer", "require", "verify-full", "verify-ca", "allow", "disable"],
+                    default="prefer",
+                    style=_custom_style,
+                ).ask() or "prefer"
+                db_max_connections = int(Prompt.ask("max_connections of that server", default="100"))
+            db_version = Prompt.ask(
+                "PostgreSQL server version" if db_mode == "external" else "PostgreSQL version",
+                default=project.db_version or "16",
+            )
         while True:
             db_user = Prompt.ask("DB user", default=f"odoo_{env}")
             db_name = Prompt.ask("Database name", default=db_user)
@@ -295,6 +323,25 @@ class InstanceConfigManager:
             # PostgreSQL cannot take is only reported minutes into a deploy.
             console.print(f"[red]Not a valid PostgreSQL identifier: {', '.join(invalid)}[/red]")
             console.print("[dim]Up to 63 letters, digits and underscores, and cannot start with a digit.[/dim]")
+        if docker and db_mode == "external":
+            # The role is created by whoever administers the server; its
+            # password goes to the gitignored secret store, never to instance.yaml.
+            from .external_db import external_password_var
+            from .secrets_store import PG_PASS, save as save_secret
+
+            pg_password = Prompt.ask(
+                f"Password of role {db_user} (empty: read ${external_password_var(env)} at deploy time)",
+                password=True,
+                default="",
+                show_default=False,
+            )
+            if pg_password:
+                path = save_secret(self.project_path, env, {PG_PASS: pg_password})
+                console.print(f"[dim]  Stored in {path}[/dim]")
+            console.print(
+                f"[dim]The role must exist on {db_host}. It needs CREATEDB unless you create the database "
+                f"{db_name} beforehand with OWNER {db_user}.[/dim]"
+            )
         generated_passwd = _random_password()
         admin_passwd = Prompt.ask("Odoo master password", password=True, show_default=False, default=generated_passwd)
         if admin_passwd == generated_passwd:
@@ -331,7 +378,7 @@ class InstanceConfigManager:
             gitman_config = Prompt.ask("Gitman config file (local path)", default=DEFAULT_GITMAN_FILE)
 
         pg_profile = ""
-        if docker:
+        if docker and db_mode == "container":
             console.print("\n[bold]PostgreSQL profile[/bold]")
             pg_profile = questionary.select(
                 "Resource profile:",
@@ -372,8 +419,13 @@ class InstanceConfigManager:
             result.update(
                 odoo_tag=odoo_tag,
                 domain=domain,
-                traefik_email=traefik_email,
+                letsencrypt_email=letsencrypt_email,
+                db_mode=db_mode,
+                db_host=db_host,
+                db_port=db_port,
+                db_sslmode=db_sslmode,
+                db_max_connections=db_max_connections,
                 db_version=db_version,
-                pg_profile=pg_profile,
+                pg_profile=pg_profile or "small",
             )
         return result

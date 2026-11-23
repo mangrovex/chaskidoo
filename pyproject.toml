@@ -1,9 +1,12 @@
 [project]
-name = "rocketdoo"
-version = "3.14.1"
-description = "Framework for creating Odoo development environments with Docker and custom templates."
+name = "rocketdoo-manex"
+version = "3.14.1+manex.1"
+description = "Manexware fork of rocketdoo: Odoo environments with Docker, external PostgreSQL and Nginx for stage/prod."
 authors = [
     { name = "Horacio Montaño", email = "horaciomontano@hdmsoft.com.ar" }
+]
+maintainers = [
+    { name = "Manuel Vega", email = "manuel.vega@manexware.com" }
 ]
 readme = "README.md"
 license = { file = "LICENSE" }

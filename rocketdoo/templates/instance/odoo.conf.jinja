@@ -4,12 +4,16 @@ addons_path = {{ addons_path }}
 data_dir = /var/lib/odoo
 admin_passwd = {{ admin_passwd }}
 
-db_host = db
-db_port = 5432
+db_host = {{ db_host }}
+db_port = {{ db_port }}
 db_user = {{ db_user }}
 db_password = {{ db_password }}
 db_name = {{ db_name }}
+db_sslmode = {{ db_sslmode }}
 db_maxconn = {{ db_maxconn }}
+# Only this database is served: with an external server the role may see
+# others (shared cluster), and none of them belong to this instance.
+dbfilter = ^{{ db_name }}$
 
 log_level = {{ log_level }}
 logfile = /var/log/odoo/odoo-server.log
