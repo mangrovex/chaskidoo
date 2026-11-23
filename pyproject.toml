@@ -1,7 +1,7 @@
 [project]
-name = "rocketdoo-manex"
-version = "3.14.1+manex.3"
-description = "Manexware fork of rocketdoo: Odoo environments with Docker; PostgreSQL in Docker, on the VPS or external; Nginx or Traefik."
+name = "chaskidoo"
+version = "3.14.1+manex.4"
+description = "Chaskidoo (Manexware fork of rocketdoo): Odoo environments with Docker; PostgreSQL in Docker, on the VPS or external; Nginx or Traefik."
 authors = [
     { name = "Horacio Montaño", email = "horaciomontano@hdmsoft.com.ar" }
 ]
@@ -24,8 +24,11 @@ dependencies = [
 ]
 
 [project.scripts]
-rocketdoo = "rocketdoo.cli:main"
+chaskidoo = "rocketdoo.cli:main"
+chk = "rocketdoo.cli:main"
+# Compatibility with rocketdoo: same CLI under its old names.
 rkd = "rocketdoo.cli:main"
+rocketdoo = "rocketdoo.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rocketdoo GUI — v3</title>
+<title>Chaskidoo GUI</title>
+<link rel="icon" href="/static/brand/chaskidoo-favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/static/brand/favicon.ico">
+<link rel="apple-touch-icon" href="/static/brand/chaskidoo-180.png">
 <script src="/static/vue.global.prod.js"></script>
 <style>
 :root {
@@ -384,7 +387,7 @@ const L = {
     helpInstancesDesc: `Despliega una instancia completa de Odoo (Dockerfile + docker-compose + odoo.conf) a un VPS remoto vía SSH. Admite entornos <b style="color:var(--tx);">stage</b> y <b style="color:var(--tx);">prod</b>, despliegue con Docker o nativo, y un modo de simulación (dry-run) para previsualizar qué se enviará antes de transferir archivos.`,
     helpModulesDesc: `Escanea el directorio <code style="color:var(--lk);font-size:11px;">addons/</code> y lista todos los módulos de Odoo con su versión y dependencias. La sección <b style="color:var(--tx);">Repositorios externos</b> muestra y edita <code style="color:var(--lk);font-size:11px;">gitman.yaml</code> — agrega, edita o elimina repos y luego dispara una reconstrucción de Docker para traer los cambios al contenedor.`,
     helpPackDesc: `Crea un ZIP portable de todo el entorno — código fuente, volcado de la base de datos y filestore — para compartir con un compañero. Quien lo recibe extrae el ZIP y ejecuta <b style="color:var(--tx);">Desempaquetar</b> para restaurarlo con un solo comando. Las claves SSH nunca se incluyen en el archivo.`,
-    helpProjectsDesc: `Recorre el sistema de archivos para abrir proyectos Rocketdoo existentes. Cambiar de proyecto reinicia el servidor de la GUI en el nuevo directorio para que todas las pantallas reflejen el contexto seleccionado.`,
+    helpProjectsDesc: `Recorre el sistema de archivos para abrir proyectos Chaskidoo existentes. Cambiar de proyecto reinicia el servidor de la GUI en el nuevo directorio para que todas las pantallas reflejen el contexto seleccionado.`,
     helpServicesDesc: `<b style="color:var(--tx);">Mailpit</b> — activa o desactiva un servidor SMTP de pruebas. Odoo le envía los correos en vez de a un servidor real; abre su interfaz web, en el puerto que muestra la tarjeta, para inspeccionarlos. <b style="color:var(--tx);">Traefik</b> — configura un proxy inverso con HTTPS local o de producción, y obtén instrucciones para actualizar tu archivo hosts.`,
     helpSetupDesc: `<b style="color:var(--tx);">Scaffold</b> copia los archivos base de la plantilla (Dockerfile, docker-compose, odoo.conf…) al directorio actual. El <b style="color:var(--tx);">asistente de inicialización</b> te guía para elegir la versión de Odoo, la edición, los puertos, las claves SSH y los repos de terceros, y luego genera todas las plantillas.`,
     helpSubtitle: `Referencia de todas las funciones de la GUI con sus equivalentes de línea de comandos`,
@@ -434,7 +437,7 @@ const L = {
     navSetup: `Configuración`,
     newProjectNamePlaceholder: `my-odoo-project — nombre del directorio, sin espacios`,
     noContainers: `Sin contenedores`,
-    noContainersFoundDesc: `Asegúrate de estar en un directorio de proyecto Rocketdoo y ejecuta <code style="color:var(--lk);">rkd up</code>`,
+    noContainersFoundDesc: `Asegúrate de estar en un directorio de proyecto Chaskidoo y ejecuta <code style="color:var(--lk);">rkd up</code>`,
     noContainersFoundTitle: `No se encontraron contenedores`,
     noContainersRunning: `No hay contenedores en ejecución`,
     noDatabasesFound: `No se encontraron bases de datos`,
@@ -444,10 +447,10 @@ const L = {
     noInstancesConfigured: `No hay instancias configuradas`,
     noMatches: `Sin coincidencias`,
     noModulesFound: `No se encontraron módulos`,
-    noProjectFoundDesc: `Inicializa un proyecto Rocketdoo para empezar`,
+    noProjectFoundDesc: `Inicializa un proyecto Chaskidoo para empezar`,
     noProjectFoundTitle: `No se encontró ningún proyecto en este directorio`,
     noProjectsFound: `No se encontraron proyectos`,
-    noProjectsFoundDesc: `Un proyecto Rocketdoo debe tener tanto <code style="color:var(--lk);">Dockerfile</code> como <code style="color:var(--lk);">docker-compose.yaml</code>`,
+    noProjectsFoundDesc: `Un proyecto Chaskidoo debe tener tanto <code style="color:var(--lk);">Dockerfile</code> como <code style="color:var(--lk);">docker-compose.yaml</code>`,
     noSshKeysFoundHint: `No se encontraron claves SSH en ~/.ssh/ — genera una con <code style="color:var(--lk);">ssh-keygen -t ed25519</code>`,
     noneOption: `— ninguna —`,
     notConfigured: `Sin configurar`,
@@ -466,7 +469,7 @@ const L = {
     packButton: `Empaquetar (rkd pack)`,
     packEnvironment: `Empaquetar entorno`,
     packEnvironmentDesc: `Crea un ZIP con el proyecto completo (código + backup de la base de datos + filestore) para compartir con otro desarrollador.`,
-    packSubtitle: `Empaqueta y comparte entornos Rocketdoo completos`,
+    packSubtitle: `Empaqueta y comparte entornos Chaskidoo completos`,
     packTitle: `Empaquetar / Desempaquetar`,
     packingEllipsis: `Empaquetando…`,
     path: `Ruta`,
@@ -480,7 +483,7 @@ const L = {
     projectNameLabel: `Nombre del proyecto *`,
     projectNamePlaceholder: `my-odoo-project — se usa como prefijo del nombre del contenedor`,
     projectsFoundCount: `{count} proyecto(s) encontrado(s)`,
-    projectsSubtitle: `Descubre, navega y crea proyectos Rocketdoo en este host`,
+    projectsSubtitle: `Descubre, navega y crea proyectos Chaskidoo en este host`,
     projectsTitle: `Proyectos`,
     qsDeployDesc: `Envía módulos a un destino VPS cuando esté listo para producción.`,
     qsDeployTitle: `Desplegar`,
@@ -533,7 +536,7 @@ const L = {
     pasteTokenPlaceholder: `Pegá el token acá`,
     sessionTokenRequired: `Se requiere un token de sesión`,
     sessionTokenRequiredDesc: `Esta página no tiene un token de sesión válido. Abre la URL que imprime <code>rkd gui</code> en la terminal donde se está ejecutando — termina con <code>?token=...</code>.`,
-    setupSubtitle: `Ejecuta Scaffold e inicializa un nuevo proyecto Rocketdoo en el directorio activo`,
+    setupSubtitle: `Ejecuta Scaffold e inicializa un nuevo proyecto Chaskidoo en el directorio activo`,
     setupTitle: `Configuración`,
     showAll: `Mostrar todos`,
     sshKey: `Clave SSH`,
@@ -640,7 +643,7 @@ const L = {
     unpackInfoLoadFailed: `No se pudo cargar la información de desempaquetado`,
     unpackCompleted: `Desempaquetado completado`,
     unpackFailed: `Error al desempaquetar`,
-    noProjectsFoundInDir: `No se encontraron proyectos Rocketdoo en {dir}`,
+    noProjectsFoundInDir: `No se encontraron proyectos Chaskidoo en {dir}`,
     projectOpenedSwitching: `Proyecto "{name}" abierto — cambiando al Panel`,
     failedToOpenProject: `No se pudo abrir el proyecto`,
     failedToCreateDirectory: `No se pudo crear el directorio`,
@@ -766,7 +769,7 @@ const L = {
     helpInstancesDesc: `Deploy a full Odoo instance (Dockerfile + docker-compose + odoo.conf) to a remote VPS via SSH. Supports <b style="color:var(--tx);">stage</b> and <b style="color:var(--tx);">prod</b> environments, Docker or native deployment, and a dry-run mode to preview what will be sent before transferring any files.`,
     helpModulesDesc: `Scans the <code style="color:var(--lk);font-size:11px;">addons/</code> directory and lists every Odoo module with its version and dependencies. The <b style="color:var(--tx);">External Repos</b> section shows and edits <code style="color:var(--lk);font-size:11px;">gitman.yaml</code> — add, edit, or delete repos and then trigger a Docker rebuild to pull the changes into the container.`,
     helpPackDesc: `Create a portable ZIP of the entire environment — source code, database dump, and filestore — to share with a teammate. The recipient extracts the ZIP and runs <b style="color:var(--tx);">Unpack</b> to restore it with a single command. SSH keys are never included in the archive.`,
-    helpProjectsDesc: `Browse the filesystem to open existing Rocketdoo projects. Switching a project restarts the GUI server in the new directory so all views reflect the selected context.`,
+    helpProjectsDesc: `Browse the filesystem to open existing Chaskidoo projects. Switching a project restarts the GUI server in the new directory so all views reflect the selected context.`,
     helpServicesDesc: `<b style="color:var(--tx);">Mailpit</b> — toggle an SMTP testing server. Odoo sends emails to it instead of a real server; open its web UI, at the port the card shows, to inspect them. <b style="color:var(--tx);">Traefik</b> — configure a reverse proxy with local or production HTTPS, and get instructions to update your hosts file.`,
     helpSetupDesc: `<b style="color:var(--tx);">Scaffold</b> copies the base template files (Dockerfile, docker-compose, odoo.conf…) into the current directory. <b style="color:var(--tx);">Init Wizard</b> walks you through choosing the Odoo version, edition, ports, SSH keys, and third-party repos, then renders all templates.`,
     helpSubtitle: `Reference for all GUI features with their CLI equivalents`,
@@ -816,7 +819,7 @@ const L = {
     navSetup: `Setup`,
     newProjectNamePlaceholder: `my-odoo-project — directory name, no spaces`,
     noContainers: `No containers`,
-    noContainersFoundDesc: `Make sure you are in a Rocketdoo project directory and run <code style="color:var(--lk);">rkd up</code>`,
+    noContainersFoundDesc: `Make sure you are in a Chaskidoo project directory and run <code style="color:var(--lk);">rkd up</code>`,
     noContainersFoundTitle: `No containers found`,
     noContainersRunning: `No containers running`,
     noDatabasesFound: `No databases found`,
@@ -826,10 +829,10 @@ const L = {
     noInstancesConfigured: `No instances configured`,
     noMatches: `No matches`,
     noModulesFound: `No modules found`,
-    noProjectFoundDesc: `Initialize a Rocketdoo project to get started`,
+    noProjectFoundDesc: `Initialize a Chaskidoo project to get started`,
     noProjectFoundTitle: `No project found in this directory`,
     noProjectsFound: `No projects found`,
-    noProjectsFoundDesc: `A Rocketdoo project must have both <code style="color:var(--lk);">Dockerfile</code> and <code style="color:var(--lk);">docker-compose.yaml</code>`,
+    noProjectsFoundDesc: `A Chaskidoo project must have both <code style="color:var(--lk);">Dockerfile</code> and <code style="color:var(--lk);">docker-compose.yaml</code>`,
     noSshKeysFoundHint: `No SSH keys found in ~/.ssh/ — generate one with <code style="color:var(--lk);">ssh-keygen -t ed25519</code>`,
     noneOption: `— none —`,
     notConfigured: `Not configured`,
@@ -848,7 +851,7 @@ const L = {
     packButton: `Pack (rkd pack)`,
     packEnvironment: `Pack Environment`,
     packEnvironmentDesc: `Creates a ZIP with the full project (code + DB backup + filestore) to share with another developer.`,
-    packSubtitle: `Package and share complete Rocketdoo environments`,
+    packSubtitle: `Package and share complete Chaskidoo environments`,
     packTitle: `Pack / Unpack`,
     packingEllipsis: `Packing…`,
     path: `Path`,
@@ -862,7 +865,7 @@ const L = {
     projectNameLabel: `Project name *`,
     projectNamePlaceholder: `my-odoo-project — used as container name prefix`,
     projectsFoundCount: `{count} Project(s) Found`,
-    projectsSubtitle: `Discover, navigate and create Rocketdoo projects on this host`,
+    projectsSubtitle: `Discover, navigate and create Chaskidoo projects on this host`,
     projectsTitle: `Projects`,
     qsDeployDesc: `Push modules to a VPS target when ready for production.`,
     qsDeployTitle: `Deploy`,
@@ -915,7 +918,7 @@ const L = {
     pasteTokenPlaceholder: `Paste the token here`,
     sessionTokenRequired: `Session token required`,
     sessionTokenRequiredDesc: `This page has no valid session token. Open the URL printed by <code>rkd gui</code> in the terminal it is running from — it ends with <code>?token=...</code>.`,
-    setupSubtitle: `Scaffold and initialize a new Rocketdoo project in the active directory`,
+    setupSubtitle: `Scaffold and initialize a new Chaskidoo project in the active directory`,
     setupTitle: `Setup`,
     showAll: `Show all`,
     sshKey: `SSH Key`,
@@ -1022,7 +1025,7 @@ const L = {
     unpackInfoLoadFailed: `Could not load unpack info`,
     unpackCompleted: `Unpack completed`,
     unpackFailed: `Unpack failed`,
-    noProjectsFoundInDir: `No Rocketdoo projects found in {dir}`,
+    noProjectsFoundInDir: `No Chaskidoo projects found in {dir}`,
     projectOpenedSwitching: `Project "{name}" opened — switching to Dashboard`,
     failedToOpenProject: `Failed to open project`,
     failedToCreateDirectory: `Failed to create directory`,
@@ -2730,7 +2733,7 @@ const Pack = {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   PROJECTS — Discover, navigate & create Rocketdoo projects
+   PROJECTS — Discover, navigate & create Chaskidoo projects
 ══════════════════════════════════════════════════════════════════════════ */
 const Projects = {
   setup() {
@@ -3302,12 +3305,12 @@ const App = {
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="logo-area">
-        <div class="logo-icon">
-          <span v-html="I.rocket" style="width:18px;height:18px;color:var(--on-br);"></span>
+        <div class="logo-icon" style="background:none;box-shadow:none;">
+          <img src="/static/brand/chaskidoo-icon.svg" alt="Chaskidoo" width="38" height="38" style="display:block;border-radius:10px;">
         </div>
         <div>
-          <div class="logo-text">RKD <span class="v3-badge">{{ rkdVersion ? 'v'+rkdVersion : 'v3' }}</span></div>
-          <div class="logo-sub">Rocketdoo</div>
+          <div class="logo-text">chaskidoo <span class="v3-badge">{{ rkdVersion ? 'v'+rkdVersion : 'v3' }}</span></div>
+          <div class="logo-sub">Manexware</div>
         </div>
       </div>
 
@@ -3338,7 +3341,7 @@ const App = {
       </nav>
 
       <div class="sidebar-footer">
-        <div style="color:var(--su);margin-bottom:8px;">Rocketdoo<span v-if="rkdVersion"> v{{ rkdVersion }}</span></div>
+        <div style="color:var(--su);margin-bottom:8px;">Chaskidoo<span v-if="rkdVersion"> v{{ rkdVersion }}</span></div>
         <a href="https://rkd-docs.readthedocs.io" target="_blank"
            style="color:var(--lk);text-decoration:none;font-size:11px;display:inline-flex;align-items:center;gap:4px;">
           <span v-html="I.ext" style="width:10px;height:10px;"></span> {{ $t('documentation') }}

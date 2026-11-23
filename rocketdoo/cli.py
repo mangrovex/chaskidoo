@@ -29,7 +29,7 @@ from .init_project import init_project
 from .scaffold import scaffold_project
 
 # Detect the command name used to invoke the CLI
-PROG_NAME = "rkd" if "rkd" in sys.argv[0] else "rocketdoo"
+PROG_NAME = next((n for n in ("chk", "chaskidoo", "rkd") if Path(sys.argv[0]).name.startswith(n)), "rocketdoo")
 
 console = Console()
 
@@ -162,7 +162,7 @@ def delete_command(ctx, delete_identifier, dry_run, path, quiet):
 
 @click.group(epilog="Pre-flight checklist complete. The rocket is still on the pad - you wouldn't dare launch it.")
 @click.version_option(
-    version=f"{__version__}", prog_name="Rocketdoo"
+    version=f"{__version__}", prog_name="Chaskidoo"
 )  # version declared on rocketdoo/core/__init__.py and pyproject.toml
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose mode for detailed output")
 @click.option("--config", "-c", type=click.Path(), help="Path to custom configuration file")
