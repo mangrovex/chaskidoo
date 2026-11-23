@@ -1,0 +1,138 @@
+"""
+RocketDoo Instance - SSH authentication utilities
+Shared by DockerInstanceDeployer and NativeInstanceDeployer.
+
+Mirrors the auth pattern from core/deploy/vps.py:
+  - ssh_key  → -i key_path
+  - password → sshpass -e     (password read from the SSHPASS env var, requires sshpass installed)
+"""
+
+from getpass import getpass
+from pathlib import Path
+
+from rich.console import Console
+
+from rocketdoo.core.ssh_manager import check_sshpass, env_ref_name, resolve_env_ref, resolve_key_path, sshpass_wrap
+
+console = Console()
+
+
+def resolve_auth(vps_cfg: dict, env: str, project_path: Path) -> dict:
+    """
+    Return a resolved auth dict ready for use in SSH/rsync commands.
+
+    Input  (from instance.yaml):
+        auth_method: ssh_key | password
+        ssh_key:     ~/.ssh/my_key       (if ssh_key)
+        password:    ${VAR} | literal    (if password)
+
+    Output:
+        {
+            'method':   'ssh_key' | 'password',
+            'key_path': '/home/user/.ssh/my_key',  # expanded, or None
+            'password': 'actual_password',          # or None
+        }
+    """
+    method = vps_cfg.get("auth_method", "ssh_key")
+
+    if method == "ssh_key":
+        raw_key = vps_cfg.get("ssh_key", "~/.ssh/id_rsa")
+        key_path = resolve_key_path(raw_key)
+        if not Path(key_path).exists():
+            console.print(f"[yellow]⚠ SSH key not found: {key_path}[/yellow]")
+        return {"method": "ssh_key", "key_path": key_path, "password": None}
+
+    # password method
+    password = vps_cfg.get("password", "")
+
+    # Resolve env var reference  (e.g. ${INSTANCE_STAGE_PASSWORD})
+    var_name = env_ref_name(password)
+    if var_name:
+        password = resolve_env_ref(password)
+        if not password:
+            console.print(f"[yellow]Environment variable {var_name} not set.[/yellow]")
+
+    # Interactive prompt if still empty
+    if not password:
+        console.print("[yellow]🔐 VPS password required.[/yellow]")
+        password = getpass(f"Password for {vps_cfg.get('user')}@{vps_cfg.get('host')}: ")
+        if not password:
+            raise ValueError("Password authentication selected but no password provided.")
+
+        console.print(f"[dim]To skip this prompt next time: export INSTANCE_{env.upper()}_PASSWORD=...[/dim]")
+
+    if not check_sshpass():
+        raise RuntimeError("Password authentication requires 'sshpass'.\nInstall it with: sudo apt install sshpass")
+
+    return {"method": "password", "key_path": None, "password": password}
+
+
+def ssh_opts(auth: dict, port: int, agent_forward: bool = False) -> list[str]:
+    """Return SSH -o/-i/-A options (without the leading 'ssh')."""
+    opts = [
+        "-p",
+        str(port),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+    ]
+    if auth["method"] == "ssh_key" and auth["key_path"]:
+        opts += ["-i", auth["key_path"]]
+    if agent_forward:
+        opts.append("-A")
+    return opts
+
+
+def build_ssh_cmd(
+    auth: dict, port: int, user: str, host: str, command: str, agent_forward: bool = False
+) -> tuple[list[str], dict | None]:
+    """Full (cmd, env) pair ready for subprocess.run()."""
+    argv = [
+        "ssh",
+        *ssh_opts(auth, port, agent_forward),
+        f"{user}@{host}",
+        command,
+    ]
+    # Keyed on the method, as ssh_prefix() was: a dict built by hand without
+    # a "password" key should not silently fall through to key auth.
+    password = auth["password"] if auth["method"] == "password" else None
+    return sshpass_wrap(password, argv)
+
+
+def ensure_dirs_command(dirs: list[str], chown_target: str, owner: str) -> str:
+    """Create `dirs` as the SSH user, falling back to sudo when the parent is root's.
+
+    `sudo -n` because the deploy runs ssh without a TTY: a password prompt
+    would fail with an opaque askpass error instead of saying what to fix.
+    `mkdir -p` succeeds on a directory that exists but belongs to root, so the
+    first branch also asks whether the target is writable.
+    """
+    paths = " ".join(dirs)
+    return (
+        f"mkdir -p {paths} 2>/dev/null && [ -w {chown_target} ]"
+        f" || {{ sudo -n mkdir -p {paths} && sudo -n chown -R {owner} {chown_target}; }}"
+        " || { echo 'Cannot create the remote directory: the SSH user needs passwordless sudo"
+        " for it, or an absolute remote_path it owns (for example /home/ubuntu/odoo-prod).' >&2; exit 1; }"
+    )
+
+
+def build_rsync_cmd(
+    auth: dict, port: int, user: str, host: str, local: str, remote: str, extra_opts: list[str] | None = None
+) -> tuple[list[str], dict | None]:
+    """rsync (cmd, env) pair ready for subprocess.run()."""
+    ssh_e = "ssh " + " ".join(ssh_opts(auth, port))
+    argv = [
+        "rsync",
+        "-avz",
+        "--delete",
+        "-e",
+        ssh_e,
+        *(extra_opts or []),
+        local,
+        f"{user}@{host}:{remote}",
+    ]
+    # Keyed on the method, as ssh_prefix() was: a dict built by hand without
+    # a "password" key should not silently fall through to key auth.
+    password = auth["password"] if auth["method"] == "password" else None
+    return sshpass_wrap(password, argv)

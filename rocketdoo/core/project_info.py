@@ -1,0 +1,314 @@
+"""
+Módulo para leer y extraer información de configuración del proyecto Rocketdoo
+"""
+
+import os
+from pathlib import Path
+from typing import Dict, Optional
+
+import yaml
+
+from rocketdoo.core.models.project import ProjectConfig
+
+
+def read_docker_compose(project_root: Path | str | None = None) -> Optional[Dict]:
+    """Lee el archivo docker-compose.yaml"""
+    root = Path(project_root) if project_root else Path.cwd()
+    compose_path = root / "docker-compose.yaml"
+    if not compose_path.exists():
+        compose_path = root / "docker-compose.yml"
+
+    if compose_path.exists():
+        try:
+            with open(compose_path, "r") as f:
+                return yaml.safe_load(f)
+        except Exception:
+            return None
+    return None
+
+
+def read_gitman(project_root: Path | str | None = None) -> Optional[Dict]:
+    """Lee el archivo gitman.yaml"""
+    root = Path(project_root) if project_root else Path.cwd()
+    gitman_path = root / "gitman.yaml"
+    if gitman_path.exists():
+        try:
+            with open(gitman_path, "r") as f:
+                return yaml.safe_load(f)
+        except Exception:
+            return None
+    return None
+
+
+def read_odoo_conf(project_root: Path | str | None = None) -> Optional[Dict]:
+    """Lee el archivo config/odoo.conf"""
+    root = Path(project_root) if project_root else Path.cwd()
+    conf_path = root / "config" / "odoo.conf"
+    if conf_path.exists():
+        try:
+            config = {}
+            with open(conf_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        config[key.strip()] = value.strip()
+            return config
+        except Exception:
+            return None
+    return None
+
+
+def read_dockerfile(project_root: Path | str | None = None) -> Optional[str]:
+    """Reads the Dockerfile"""
+    root = Path(project_root) if project_root else Path.cwd()
+    dockerfile_path = root / "Dockerfile"
+    if dockerfile_path.exists():
+        try:
+            with open(dockerfile_path, "r") as f:
+                return f.read()
+        except Exception:
+            return None
+    return None
+
+
+def extract_odoo_version_from_dockerfile(project_root: Path | str | None = None) -> Optional[str]:
+    """Extracts Odoo version from Dockerfile FROM instruction"""
+    dockerfile = read_dockerfile(project_root)
+    if dockerfile:
+        for line in dockerfile.split("\n"):
+            line = line.strip()
+            # Check for FROM odoo:X.X or FROM odoo:X.X-something
+            if line.startswith("FROM") and "odoo:" in line.lower():
+                try:
+                    # Extract version after 'odoo:'
+                    # Examples: FROM odoo:18.0 or FROM odoo:18.0-alpine
+                    parts = line.lower().split("odoo:")
+                    if len(parts) > 1:
+                        version_part = parts[1].split()[0]  # Get first part after odoo:
+                        # Remove any non-version characters (like -alpine, -slim, etc)
+                        version = version_part.split("-")[0].strip()
+                        return version
+                except Exception:
+                    pass
+    return None
+
+
+def detect_ssh_key_usage(project_root: Path | str | None = None) -> Optional[str]:
+    """Detects if an SSH key is being used in Dockerfile.
+
+    Sólo cuentan las instrucciones activas: la plantilla deja el bloque SSH
+    comentado, y un '#COPY ./.ssh/rsa /root/.ssh/id_rsa' se reportaba como clave
+    en uso porque la comparación era por substring sobre la línea completa.
+    """
+    dockerfile = read_dockerfile(project_root)
+    if not dockerfile:
+        return None
+
+    for raw_line in dockerfile.split("\n"):
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = line.split()
+        # COPY tiene que ser la instrucción, no aparecer en cualquier parte
+        if len(parts) < 3 or parts[0].upper() != "COPY":
+            continue
+
+        source, dest = parts[1], parts[2]
+        if ".ssh" in source or ".ssh" in dest or "id_" in os.path.basename(source) or "id_" in os.path.basename(dest):
+            return os.path.basename(source)
+
+    return None
+
+
+def detect_enterprise_edition(project_root: Path | str | None = None) -> bool:
+    """Detects if Enterprise edition is enabled by checking docker-compose volumes"""
+    compose_data = read_docker_compose(project_root)
+    if compose_data and "services" in compose_data:
+        web_service = compose_data["services"].get("web")
+        if web_service:
+            volumes = web_service.get("volumes", [])
+            for volume in volumes:
+                # yaml.safe_load ya descartó los volúmenes comentados: todo lo
+                # que llega acá es una línea activa del compose
+                if isinstance(volume, str) and "enterprise" in volume.lower():
+                    return True
+
+    # Also check in Dockerfile for enterprise references
+    dockerfile = read_dockerfile(project_root)
+    if dockerfile:
+        for line in dockerfile.split("\n"):
+            line_stripped = line.strip()
+            # Look for lines that copy or reference enterprise and are not commented
+            if "enterprise" in line_stripped.lower() and not line_stripped.startswith("#"):
+                # Common patterns: COPY enterprise, RUN ... enterprise, etc.
+                if any(keyword in line_stripped.upper() for keyword in ["COPY", "ADD", "RUN"]):
+                    return True
+
+    return False
+
+
+def as_text(value):
+    """A YAML scalar as text, because `yaml.safe_load` is YAML 1.1.
+
+    `restart: no` reads back as the boolean False, not as the "no" docker
+    reads, and `name: 2024` as an int (measured). This is not an exotic
+    hand-edit: `rkd init` offers `no` as one of its three restart policies
+    and the generated compose wrote it unquoted, so rkd produced the file
+    that rkd could not read once `get_project_info()` started validating
+    types (#204).
+
+    A folded boolean cannot be unfolded -- YAML 1.1 reads `no`, `off` and
+    `false` as the same False -- so it is spelled back the way the only key
+    that legitimately carries one is spelled in a compose file.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "no" if value is False else "yes"
+    return str(value)
+
+
+def get_project_info(project_root: Path | str | None = None) -> ProjectConfig:
+    """Collects all project information.
+
+    Scrapes the generated files and returns the result as a `ProjectConfig`
+    (#204). The keys below are the model's field names and the GUI sends
+    them to the SPA unchanged, so the dict built here is validated on the
+    way out rather than handed over as-is: a mistyped key raises here
+    instead of quietly vanishing from the panel.
+    """
+    info = {
+        "project_name": None,
+        "odoo_version": None,
+        "odoo_edition": "Community",  # Default
+        "db_version": None,
+        "odoo_container": None,
+        "db_container": None,
+        "odoo_port": None,
+        "vsc_port": None,
+        "restart_policy": None,
+        "use_private_repos": False,
+        "ssh_key": None,
+        "use_third_party_repos": False,
+        "third_party_repos": [],
+        "db_port": None,
+        "admin_passwd": None,
+    }
+
+    # 1. READ ODOO VERSION FROM DOCKERFILE (priority)
+    dockerfile_version = extract_odoo_version_from_dockerfile(project_root)
+    if dockerfile_version:
+        info["odoo_version"] = dockerfile_version
+
+    # 2. DETECT ENTERPRISE EDITION
+    if detect_enterprise_edition(project_root):
+        info["odoo_edition"] = "Enterprise"
+
+    # 3. READ docker-compose.yaml
+    compose_data = read_docker_compose(project_root)
+    if compose_data:
+        # Project name - from "name" key in docker-compose
+        if "name" in compose_data:
+            info["project_name"] = as_text(compose_data["name"])
+
+        # Services
+        if "services" in compose_data:
+            services = compose_data["services"]
+
+            # Find "web" (Odoo) and "db" (PostgreSQL) services
+            web_service = services.get("web")
+            db_service = services.get("db")
+
+            # === WEB SERVICE (ODOO) INFO ===
+            if web_service:
+                # Container name
+                info["odoo_container"] = as_text(web_service.get("container_name", "odoo-unknown"))
+
+                # Restart policy
+                info["restart_policy"] = as_text(web_service.get("restart", "no"))
+
+                # Ports - format "8069:8069" or "8888:8888"
+                ports = web_service.get("ports", [])
+                port_list = []
+                for port_mapping in ports:
+                    port_str = str(port_mapping)
+                    if ":" in port_str:
+                        # Extract first port (before colon)
+                        host_port = port_str.split(":")[0].strip()
+                        port_list.append(host_port)
+
+                # First port is Odoo, second is VSCode debug
+                if len(port_list) >= 1:
+                    info["odoo_port"] = port_list[0]
+                if len(port_list) >= 2:
+                    info["vsc_port"] = port_list[1]
+
+                # Odoo version - from "image" field (fallback if not in Dockerfile)
+                if not info["odoo_version"]:
+                    image = as_text(web_service.get("image", "")) or ""
+                    if "odoo:" in image.lower():
+                        # Format: "odoo:18.0" or "test2" (custom image)
+                        if ":" in image:
+                            version_part = image.split(":")[1].split("-")[0].strip()
+                            # Only use if it looks like a version (contains numbers and dots)
+                            if any(char.isdigit() for char in version_part):
+                                info["odoo_version"] = version_part
+
+            # === DB SERVICE (POSTGRESQL) INFO ===
+            if db_service:
+                # Container name
+                info["db_container"] = as_text(db_service.get("container_name", "db-unknown"))
+
+                # PostgreSQL version - from "image" field
+                image = as_text(db_service.get("image", "")) or ""
+                if "postgres:" in image:
+                    # Format: "postgres:14" -> extract "14"
+                    version = image.split("postgres:")[1].split("-")[0].strip()
+                    info["db_version"] = version
+
+                # PostgreSQL port (if exposed)
+                ports = db_service.get("ports", [])
+                if ports:
+                    for port_mapping in ports:
+                        port_str = str(port_mapping)
+                        if ":" in port_str:
+                            host_port = port_str.split(":")[0].strip()
+                            info["db_port"] = host_port
+                            break
+
+    # 4. READ odoo.conf to get admin_passwd
+    odoo_conf = read_odoo_conf(project_root)
+    if odoo_conf:
+        info["admin_passwd"] = odoo_conf.get("admin_passwd", None)
+
+    # 5. DETECT SSH USAGE
+    ssh_key = detect_ssh_key_usage(project_root)
+    if ssh_key:
+        info["use_private_repos"] = True
+        info["ssh_key"] = ssh_key
+
+    # 6. READ gitman.yaml
+    gitman_data = read_gitman(project_root)
+    if gitman_data and "sources" in gitman_data:
+        sources = gitman_data["sources"]
+        if sources and len(sources) > 0:
+            info["use_third_party_repos"] = True
+            info["third_party_repos"] = [
+                {"name": src.get("name", "unknown"), "repo": src.get("repo", ""), "rev": src.get("rev", "")} for src in sources
+            ]
+
+    return ProjectConfig(**info)
+
+
+def project_exists(project_root: Path | str | None = None) -> bool:
+    """Checks if a Rocketdoo project exists in the current directory"""
+    root = Path(project_root) if project_root else Path.cwd()
+    required_files = ["docker-compose.yaml", "Dockerfile"]
+    for file in required_files:
+        if not (root / file).exists() and not (root / file.replace(".yaml", ".yml")).exists():
+            if file == "docker-compose.yaml":
+                continue
+            return False
+    return (root / "docker-compose.yaml").exists() or (root / "docker-compose.yml").exists()

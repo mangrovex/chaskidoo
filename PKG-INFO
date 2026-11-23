@@ -1,0 +1,820 @@
+Metadata-Version: 2.4
+Name: rocketdoo
+Version: 3.14.1
+Summary: Framework for creating Odoo development environments with Docker and custom templates.
+Author-email: Horacio Montaño <horaciomontano@hdmsoft.com.ar>
+License: GNU LESSER GENERAL PUBLIC LICENSE
+                               Version 3, 29 June 2007
+                               Copyright (C) 2024-2026 Horacio Montaño
+        
+        
+        Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+        Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+        
+        This version of the GNU Lesser General Public License incorporates the terms and conditions of version 3 of the GNU General Public License, supplemented by the additional permissions listed below.
+        
+        0. Additional Definitions.
+        As used herein, “this License” refers to version 3 of the GNU Lesser General Public License, and the “GNU GPL” refers to version 3 of the GNU General Public License.
+        
+        “The Library” refers to a covered work governed by this License, other than an Application or a Combined Work as defined below.
+        
+        An “Application” is any work that makes use of an interface provided by the Library, but which is not otherwise based on the Library. Defining a subclass of a class defined by the Library is deemed a mode of using an interface provided by the Library.
+        
+        A “Combined Work” is a work produced by combining or linking an Application with the Library. The particular version of the Library with which the Combined Work was made is also called the “Linked Version”.
+        
+        The “Minimal Corresponding Source” for a Combined Work means the Corresponding Source for the Combined Work, excluding any source code for portions of the Combined Work that, considered in isolation, are based on the Application, and not on the Linked Version.
+        
+        The “Corresponding Application Code” for a Combined Work means the object code and/or source code for the Application, including any data and utility programs needed for reproducing the Combined Work from the Application, but excluding the System Libraries of the Combined Work.
+        
+        1. Exception to Section 3 of the GNU GPL.
+        You may convey a covered work under sections 3 and 4 of this License without being bound by section 3 of the GNU GPL.
+        
+        2. Conveying Modified Versions.
+        If you modify a copy of the Library, and, in your modifications, a facility refers to a function or data to be supplied by an Application that uses the facility (other than as an argument passed when the facility is invoked), then you may convey a copy of the modified version:
+          a) under this License, provided that you make a good faith effort to ensure that, in the event an Application does not supply the function or data, the facility still operates, and performs whatever part of its purpose remains meaningful, or
+          b) under the GNU GPL, with none of the additional permissions of this License applicable to that copy.
+        
+        3. Object Code Incorporating Material from Library Header Files.
+        The object code form of an Application may incorporate material from a header file that is part of the Library. You may convey such object code under terms of your choice, provided that, if the incorporated material is not limited to numerical parameters, data structure layouts, and accessors, small macros, and small inline functions (ten lines or less in length), you do both of the following:
+          a) Give prominent notice with each copy of the object code that the Library is used in it and that the Library and its use are covered by this License.
+          b) Accompany the object code with a copy of the GNU GPL and this license document.
+        
+        4. Combined Works.
+        You may convey a Combined Work under terms of your choice that, taken together, effectively do not restrict modification of the portions of the Library contained in the Combined Work and reverse engineering for debugging such modifications, if you also do each of the following:
+          a) Give prominent notice with each copy of the Combined Work that the Library is used in it and that the Library and its use are covered by this License.
+          b) Accompany the Combined Work with a copy of the GNU GPL and this license document.
+          c) For a Combined Work that displays copyright notices during execution, include the copyright notice for the Library among these notices, as well as a reference directing the user to the copies of the GNU GPL and this license document.
+          d) Do one of the following:
+              0) Convey the Minimal Corresponding Source under the terms of this License, and the Corresponding Application Code in a form suitable for, and under terms that permit, the user to recombine or relink the Application with a modified version of the Linked Version to produce a modified Combined Work, in the manner specified by section 6 of the GNU GPL for conveying Corresponding Source.
+              1) Use a suitable shared library mechanism for linking with the Library. A suitable mechanism is one that (a) uses at run time a copy of the Library already present on the user's computer system, and (b) will operate properly with a modified version of the Library that is interface-compatible with the Linked Version.
+        
+        5. Combined Libraries.
+        You may place library facilities that are a work based on the Library side by side in a single library together with other library facilities not covered by this License, and convey such a combined library under terms of your choice, if you do both of the following:
+          a) Accompany the combined library with a copy of the same work based on the Library, uncombined with any other library facilities, conveyed under the terms of this License.
+          b) Give prominent notice with the combined library that part of it is a work based on the Library, and explaining where to find the accompanying uncombined form of the same work.
+        
+        6. Revised Versions of the GNU Lesser General Public License.
+        The Free Software Foundation may publish revised and/or new versions of the GNU Lesser General Public License from time to time. Such new versions will be similar in spirit to the present version, but may differ in detail to address new problems or concerns.
+        Each version is given a distinguishing version number. If the Library specifies that a certain numbered version of the GNU Lesser General Public License “or any later version” applies to it, you have the option of following the terms and conditions either of that published version or of any later version published by the Free Software Foundation. If the Library does not specify a version number of the GNU Lesser General Public License, you may choose any version ever published by the Free Software Foundation.
+        
+        If the Library as you received it specifies that a proxy can decide whether future versions of the GNU Lesser General Public License shall apply, that proxy's public statement of acceptance of any version is permanent authorization for you to choose that version for the Library.
+        
+        <div RKD as ROCKETDOO V3=""></div>
+        
+        Licencia: LGPL-3.0+
+        Versión: "3.14.1"
+        Autor: Horacio Montaño
+        Fecha: 22/11/2026
+        Descripción: Framework to development Odoo
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: click>=8.1.3
+Requires-Dist: copier>=9.2.0
+Requires-Dist: jinja2>=3.1.2
+Requires-Dist: pyyaml>=6.0
+Requires-Dist: rich>=13.0
+Requires-Dist: pyfiglet>=1.0
+Requires-Dist: questionary>=1.10.0
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.29
+Dynamic: license-file
+
+# HDMSOFT
+
+[Visit our page](https://odoo.hdmsoft.com.ar)
+
+[Official Documentation](https://rkd-docs.readthedocs.io/en/latest/)
+
+## RKD as ROCKETDOO
+
+Odoo Development Framework
+
+**Made with passion, not just programming skills.**
+
+## Developed by:
+
+   - "Horacio Montaño"
+
+## Version: 
+   - "3.14.1"
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### Simple Description:
+
+  RKD, also known as ROCKETDOO, is version 3 of the framework designed for assisted and automated deployment of development environments.
+   In this version, unlike its predecessor, it no longer depends on a repository. In other words, it is no longer necessary to create a repository from a template — the framework is now fully independent.
+
+   Developers simply need to install the framework on their local machines using either the pip or pipx package managers. The latter is the recommended option, as it allows installing the framework globally on the developer’s system without dealing with Ubuntu and Debian security restrictions that prevent the direct use of pip install.
+   To achieve this, we provide the following two installation options:
+
+   > Ensure you have pip installed, or pipx if necessary.
+
+   ``` 
+    pip install rocketdoo  --break-system-packages
+
+   ```
+   or 
+
+   ``` 
+    pipx install rocketdoo
+
+   ```
+
+  - This development environment is intended for those developing on Linux operating systems, such as Ubuntu, Debian, etc. However, for those who prefer to develop on Windows, we suggest installing **WSL2**, the Windows Subsystem for Linux.
+  
+  - To use this framework, it is essential to have Docker, Docker Compose, and Git installed.
+
+  - ROCKETDOO version 2 now includes its own execution commands, meaning it is no longer necessary to remember or manually use Docker or Docker Compose commands, as the         framework effectively replaces the most essential ones.
+
+  - Starting from this version, there is no need to use the previous repository as a template to build your environment. Simply by installing the framework, you can create your own directories where the Odoo development environment will be applied.
+
+  - In version 2, you can use either the command rocketdoo or its alias rkd for greater convenience and agility.
+
+  - Gitman is used for downloading and installing external repositories.
+  
+  - Make sure you have **Docker** and **Docker Compose** installed on your computer. If not, you can follow the official Docker installation guide, [Docker Installation Guide](https://docs.docker.com/engine/install/ubuntu/).
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  ### Comand Line
+
+Below we will list the commands that make up the new version of **rocketdoo**
+
+```
+ rocketdoo --version
+
+```
+
+
+```
+ rocketdoo --help
+
+```
+
+
+```
+ rocketdoo scaffold
+
+```
+
+
+```
+ rocketdoo init
+
+```
+
+
+```
+ rocketdoo info
+
+```
+
+
+```
+ rocketdoo up
+
+```
+
+
+```
+ rocketdoo up -d
+
+```
+
+
+```
+ rocketdoo status
+
+```
+
+
+```
+ rocketdoo logs
+
+```
+
+
+```
+ rocketdoo stop
+
+```
+
+
+```
+ rocketdoo pause
+
+```
+
+
+```
+ rocketdoo down
+
+```
+
+
+```
+ rocketdoo down -v
+
+```
+
+
+```
+ rocketdoo build
+
+```
+
+```
+ rocketdoo deploy
+
+```
+
+
+```
+ rocketdoo mail on
+
+```
+
+
+```
+ rocketdoo mail off
+
+```
+
+
+```
+ rocketdoo mail status
+
+```
+
+
+```
+ rocketdoo mail open
+
+```
+
+
+```
+ rocketdoo traefik on
+
+```
+
+
+```
+ rocketdoo traefik off
+
+```
+
+
+```
+ rocketdoo traefik status
+
+```
+
+
+```
+ rocketdoo traefik guide
+
+```
+
+
+```
+ rocketdoo instance init
+
+```
+
+
+```
+ rocketdoo instance deploy --env stage
+
+```
+
+
+```
+ rocketdoo instance deploy --env prod
+
+```
+
+
+```
+ rocketdoo instance status
+
+```
+
+
+```
+ rocketdoo gui
+
+```
+
+
+```
+ rocketdoo gui --port 9090
+
+```
+
+
+```
+ rocketdoo gui --open
+
+```
+
+  
+ 
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### INSTRUCTIONS:
+
+ 1. From your Linux or WSL2 terminal, install the framework using one of the following commands:
+
+ ``` 
+    pip install rocketdoo --break-system-packages
+
+   ```
+   or 
+
+   ``` 
+    pipx install rocketdoo
+
+   ```
+   > Make sure you already have pip or pipx installed.
+ 
+ 2. Once the framework is installed, navigate to your preferred working directory and create a new directory for your development environment.
+ 
+ 3. Inside your development directory, you can start by running the scaffold command.
+This command will automatically create all the necessary files and directories required to deploy your Odoo development environment. 
+    
+
+ 4. Next, you can launch the setup wizard using the init command.
+This command will prompt you for all the necessary information to configure your environment.
+The questions include:
+
+- Project name
+
+- Odoo version (a list from version 15 to 20 is available for selection)
+
+- Odoo edition (options include Community and Enterprise)
+
+- Whether to use private repositories (for your own developments; it will list your SSH keys connected to your repositories)
+
+- Whether to use third-party repositories (if you answer YES, it will prompt you for the URLs of each repository or repository package)
+
+- PostgreSQL version (selectable option)
+
+- Odoo Master Password (for database creation)
+
+- Container restart policies (selectable option)
+
+- Odoo port (with port validation)
+
+- Visual Studio Code debug port (with port validation)
+
+Port validation checks whether the selected ports are already in use by another instance or service.
+If so, it suggests alternative ports or allows you to set them manually
+ 
+ 5. Once the setup wizard is completed, you can start the deployment with:
+
+ ```
+ rocketdoo up
+
+```
+or
+
+```
+ rocketdoo up -d
+
+```
+
+or
+
+```
+ rkd up -d
+
+```
+
+The -d flag runs the deployment in detached mode.
+
+ 6. After the environment has been successfully deployed, you can access Odoo from your preferred web browser using:
+ 
+ - http://localhost:8069 
+ 
+ or the port you selected during setup.
+
+ 7. You can check all environment details using:
+
+ ```
+ rocketdoo info
+
+```
+This command displays detailed information about the current environment in your working directory.
+
+ 8. From this point on, you can begin developing with Visual Studio Code by opening the environment’s directory in your editor.
+
+ 9. A partir de este momento ya puedes comenzar a desarrollar con Visual Studio Code, abriendo en el editor de codigo, el directorio de este ambiente! 
+
+> Remember that the addons folder is intended for your own developments, but you can also place standalone modules there if needed.
+
+ 11. You can also use the available ROCKETDOO commands to stop, pause, remove, or clean up the environment’s containers and volumes, or to view logs.
+ 
+> In this version of ROCKETDOO, you can use either the command rocketdoo or its alias rkd.
+
+ ------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### Suggestions and Considerations:
+
+ - We recommend using Visual Studio Code Extensions, such as **Docker**, **Dev Container**, and any others you find useful for working in VSCode.
+
+ - If you are developing on **Windows** with **WSL2**, it is recommended to use the **WSL:Ubuntu** extension in **Visual Studio Code** for optimal integration and performance.
+
+ - If you wish to develop in the Enterprise edition, Rocketdoo will ask you, and will make the necessary configurations. However, you should ensure that you have the "enterprise" folder with all the modules and place it in the root of this project.
+
+ - This development framework allows you to use private repositories for your developments. For this, the system will ask you if you want to use “private repositories” and if your answer is YES, it will map your local user folder “~/.ssh/” and ask you to choose which ssh key to use. 
+Don't worry, these private keys are not saved in your repository after the commit and push; it simply stores them locally and inside the development docker container. 
+Remember that your selected key must be previously configured with your GitHub repository.
+This private information is as ephemeral as your environment.
+
+### HOW TO ADD MORE MODULES TO GITMAN IF YOU DID NOT DO IT WITH THE LAUNCHER?
+
+  - If you need to use third-party addons after setting up your development environment with our launcher, you’ll need to manually edit the **gitman.yml** file and also add lines to the **odoo.conf** addons_path using:
+
+      ```sudo nano gitman.yml``` 
+  
+  and complete each line, starting with the repository URL and version, according to your development deployment version. You’ll need to replicate the set of lines to add more third-party repositories.
+  
+  If you need help, you can refer to the [gitman official guide](https://gitman.readthedocs.io/en/latest/).
+
+  - In this example, you can see how to add your new module package paths.
+  
+  Example:
+      ```addons_path: usr/lib/python/dist-packages/odoo/extra_addons/,usr/lib/python/dist-packages/odoo/external_addons/account-financial-tools```
+    
+  - Gitman creates a folder containing all declared modules under **external_addons**, which can be found inside your Odoo web container at the path declared in **odoo.conf**.
+
+  - All paths should be separated by a comma ","
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+### New in Version 3: Mail, Traefik & Instance Deployment
+
+#### `rkd mail` — Email Testing with Mailpit
+
+Rocketdoo v3 integrates [Mailpit](https://github.com/axllent/mailpit), a local SMTP testing server. All emails sent by Odoo are captured in Mailpit's web UI instead of reaching real inboxes.
+
+```bash
+rkd mail on      # Enable Mailpit; the output shows the host ports it was published on
+rkd mail off     # Disable Mailpit and restore Odoo mail settings
+rkd mail status  # Check if Mailpit is active
+rkd mail open    # Open the Mailpit web UI in your browser
+```
+
+Mailpit publishes its ports on the host at `1025` (SMTP) and `8025` (Web UI) when they are free. If another project already uses or declares them, `rkd mail on` picks the next free ones and prints them; `rkd mail off` leaves them written in `docker-compose.yaml`. Odoo always reaches Mailpit at `mailpit:1025` inside the Compose network, whatever the host port.
+
+Mailpit is toggled by commenting/uncommenting its service block in `docker-compose.yaml` using special markers (`# rkd:mailpit`). When enabled, Odoo's SMTP configuration is automatically updated to route emails through Mailpit.
+
+`rkd mail on`/`off` also write a `Mailpit (rkd)` record straight into the project's `ir.mail_server` table (Odoo's technical settings, *Outgoing Mail Servers*), so emails are captured with no extra manual setup. `on` creates or reactivates that record with `sequence = 1`; `off` archives it (never deletes it), leaving any of your own mail servers untouched. With a single database this is automatic; with more than one, pass `--db NAME` to `on`, `off`, or `status` — with several databases and no `--db`, nothing is written or read and the command tells you to re-run with it. If the `db` container isn't reachable (project stopped, Docker not running), the rest of the command still runs and it reports the reason; re-running `rkd mail on` once the project is up fixes it.
+
+`rkd mail status` shows this record's state (active, archived, not created yet, or not checked, with the reason) plus any other active `ir.mail_server` in the database. **A `sequence = 1` on the Mailpit record does not guarantee it captures every email**: Odoo's server selection filters by `from_filter` before it sorts by sequence, so a server you (or a restored production dump) already have, with a `from_filter` matching the sender, can still win even with a higher sequence number. `mail status` warns loudly when another active server has `sequence <= 1` (it can win the sequence tie-break outright), and with a softer note whenever any other server is active at all, since `from_filter` can override sequence regardless.
+
+---
+
+#### `rkd traefik` — Traefik Reverse Proxy
+
+Integrate [Traefik v2](https://traefik.io/) as a reverse proxy for your development or production environment. Supports two modes:
+
+- **local**: HTTP only, use with `/etc/hosts`
+- **production**: HTTPS with automatic Let's Encrypt certificate
+
+```bash
+rkd traefik on     # Interactive wizard — choose local or production mode
+rkd traefik off    # Remove Traefik integration
+rkd traefik status # Show current Traefik configuration
+rkd traefik guide  # Show /etc/hosts setup instructions for your OS
+```
+
+Every answer the wizard asks for can be given up front, so the command runs unattended:
+
+```bash
+rkd traefik on --mode local --domain myodoo.local
+rkd traefik on --mode production --domain odoo.example.com --email ops@example.com
+```
+
+Traefik is configured via a generated `docker-compose.override.yml` (Docker Compose merges it automatically). Disabling Traefik simply deletes the override file — your original `docker-compose.yaml` is never modified.
+
+Enabling Traefik starts the proxy and restarts your project so the new override takes effect — from the CLI and, since 3.6.0, from the web GUI too. To reconfigure an already-enabled project, run `rkd traefik off` first.
+
+> `rkd traefik` is about **this machine**. For the Traefik that serves a deployed instance on a VPS, use `rkd instance traefik --env <stage|prod>` — it reads the server and the Let's Encrypt address from `.rkd/instance.yaml` and installs the very same configuration there.
+
+---
+
+#### `rkd instance` — Full Odoo Instance Deployment to VPS
+
+Deploy a complete Odoo instance (stage and/or production) to a remote VPS. Supports two deployment strategies:
+
+- **Docker** (recommended): Transfers files and builds the Docker image directly on the VPS using BuildKit SSH agent forwarding for private repositories.
+- **Native**: Installs Odoo via official nightly packages (`apt`), configures `/etc/odoo/odoo.conf`, and manages it as a `systemd` service.
+
+Since 3.13.0 both paths install your **third-party repositories through gitman**, so the choice is about packaging, not about what you get. gitman runs on the server, not on your machine, because the `scripts:` of each source install their Python dependencies into the interpreter that runs Odoo — which, on a native deploy, is the server's system Python.
+
+Both paths also build the **same `addons_path`**, in the same order: `enterprise, extra-addons, nested dirs, gitman`. Odoo resolves a module by the order of that path, so a module that Enterprise overrides locally is overridden the same way on the server. Until 3.13.0 the native path put Enterprise last and ignored nested directories entirely.
+
+```bash
+rkd instance init                    # Interactive wizard: adds environments, never overwrites (--force starts over)
+rkd instance traefik --env stage     # Install Traefik on that VPS (once per host)
+rkd instance deploy --env stage      # Deploy to staging environment
+rkd instance deploy --env prod       # Deploy to production environment
+rkd instance deploy --env stage --dry-run  # Pre-flight checks + preview; writes nothing
+rkd instance status                  # Show configured environments
+```
+
+**Authentication options:**
+- SSH key: select from keys listed in `~/.ssh/`
+- Password: stored as environment variable reference (`${INSTANCE_PROD_PASSWORD}`)
+
+**PostgreSQL resource profiles:** small (<2 GB RAM), medium (4–8 GB), large (16+ GB)
+
+**Odoo tuning by environment:**
+- Stage: 1 worker, `log_level = info`, 1 GiB hard / 768 MiB soft memory limit
+- Production: 2 workers, `log_level = warn`, 1.5 GiB hard / 1 GiB soft memory limit, `proxy_mode = True`, `list_db = False`
+
+**Pre-flight:** every deploy (and dry-run) first checks the VPS over SSH (Docker, sudo, disk, memory, repository access) and stops on blocking problems before touching anything.
+
+**Take your development database with you (3.14.0):** the wizard asks, per environment, **which local database to deploy there**. The default is *none — a fresh database from scratch*, which is what rkd has always done: it creates an empty database, installs `base` and hands you the admin password. Pick one instead, and the deploy dumps it, ships it with its filestore, and restores it on the VPS **in place of** creating an empty one.
+
+That closes the gap between "it works on my machine" and the client's server: you build and test locally with rkd — Traefik, Mailpit, your addons, your third-party repos — and when the database covers what the client needs, that same database becomes their staging or production instance.
+
+```bash
+rkd instance init                    # asks which local database goes to each environment
+rkd instance deploy --env prod       # dumps, ships and restores it, then neutralizes
+```
+
+Three things worth knowing before you use it:
+
+- **It happens once per environment.** The deploy writes a marker inside the restored database, so a redeploy never restores again. Seeding a second time means dropping the database on the VPS by hand — deliberately, because the alternative is a flag that overwrites a client's production with a development dump.
+- **An existing database is never overwritten.** If the target already holds an Odoo that rkd did not seed, the deploy refuses and says so.
+- **What gets neutralized depends on the target.** Both regenerate the database UUID and disable the Mailpit mail server (it points at a host that does not exist on the VPS, and leaving it would make every outgoing mail fail silently). Only **staging** also disables the scheduled actions, the mail servers and the payment providers — doing that to **production** would switch off the crons of the instance you are launching.
+
+**The reverse proxy (3.12.0):** the deployed compose only *exposes* Odoo's port and labels it for Traefik — nothing is published to the host. Without a Traefik on the `traefik-public` network your domain answers nothing, even though the deploy finishes green. `rkd instance traefik --env <stage|prod>` installs it, once per host, from the same configuration `rkd traefik` renders locally:
+
+```bash
+rkd instance traefik --env prod      # reads host, user and traefik_email from .rkd/instance.yaml
+curl -I http://your.domain           # a 3xx means Traefik is routing, before any certificate exists
+```
+
+It is safe to run again: files you tuned are kept, certificates already issued are never truncated, and an existing install of your own converges instead of aborting on its own ports. A Traefik you installed yourself is left untouched and reported. It is **not** run automatically by the deploy: ports 80 and 443 belong to the host, not to one project, and quietly taking them over on a server that already runs something else is not a deploy's call. The native path still has no proxy.
+
+**What the final panel promises (3.12.0):** after starting, the deploy probes your public domain from the VPS — over HTTP and HTTPS, read-only, never fatal. It tells apart four states: Odoo answers, Traefik answers but cannot reach Odoo, the certificate is not issued yet, or nothing answers. When the domain does not answer, the panel says so and names the command that fixes it, instead of printing an URL nobody tested.
+
+**Odoo Enterprise:** `enterprise_source: rsync` transfers your local `enterprise/` directory; `clone` clones `odoo/enterprise` on the VPS through your forwarded SSH agent, leaving no credentials on the server.
+
+> **On a native deploy, gitman runs on the live server.** There is no image to build next to the running one: the sources are replaced in the directory your Odoo is reading. That is safe in practice — Odoo imports its code at startup, the step runs before the service restarts, a failure aborts the deploy, and `gitman install` converges on the next run — but there is one hole worth knowing: if the install breaks halfway *and* Odoo restarts for an unrelated reason (a reboot, an out-of-memory kill) before you run the deploy again, that start reads a half-updated tree and may fail until you do. **No data is at risk**: this step never touches the database.
+
+> **Note:** a Docker deploy needs a running SSH agent only when it actually forwards one — that is, when your gitman file has at least one source that is not plain HTTPS. Projects whose external repositories are all public HTTPS now build with no agent at all (3.12.0). When one *is* needed, an **empty** agent is enough for the build itself (`eval $(ssh-agent)`): BuildKit needs the socket, not the keys. Cloning `odoo/enterprise` on the VPS does need a loaded key, and the pre-flight tells the two cases apart.
+>
+> Password authentication requires `sshpass` installed on your local machine; the password itself travels through the `SSHPASS` environment variable (`sshpass -e`), never as a command-line argument visible to other processes on the same host.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+
+---
+
+#### `rkd gui` — Web GUI Interface
+
+Rocketdoo v3 includes a professional web-based management interface, accessible from your browser just like Odoo — no installation of additional tools required.
+
+Since 3.12.0 the interface **works with no internet connection**: its Vue runtime ships inside the package instead of being fetched from a CDN at page load. A local dashboard that draws nothing behind a corporate proxy, on a plane, or on the day a CDN is down was not much of a local tool.
+
+```bash
+rkd gui                  # Launch GUI, prints a tokenized URL to open
+rkd gui --open           # Also open that same URL in the browser automatically
+rkd gui --port 9090      # Use a custom port
+rkd gui --cwd /my/proj   # Point to a specific project directory
+```
+
+`rkd gui` prints a URL of the form `http://127.0.0.1:8070/?token=<session-token>` —
+use that exact URL, not a bare `http://localhost:8070`. Every API and WebSocket
+call requires this session token (generated fresh on each `rkd gui` start), so
+opening the GUI without it shows a message asking you to use the printed URL
+instead of the project's data. `--open` already opens the correct, tokenized
+URL for you.
+
+The GUI provides a complete visual interface for all Rocketdoo v3 features:
+
+| Section | What you can do |
+|---------|-----------------|
+| **Projects** | Discover all Rocketdoo projects on your host, switch between them, create new project directories |
+| **Dashboard** | Project overview as compact tags (Odoo version, edition, PostgreSQL, port), container table with per-service actions, one highlighted action that matches the environment's state |
+| **Containers** | Full container list with status, per-service start/stop/restart, real-time log streaming |
+| **Modules** | Scan and browse Odoo addons with version and dependency info; manage `gitman.yaml` external repos and trigger Docker rebuild |
+| **Instances** | View configured stage/prod environments, trigger deployments with dry-run support |
+| **Services** | Toggle Mailpit email testing on/off, manage Traefik reverse proxy |
+| **Help** | Quick reference guide for all `rkd` commands |
+
+Additional interface features:
+- **Dark / Light mode toggle** — follows your system's preference until you pick one explicitly; that choice then persists in `localStorage`
+- **Spanish / English switch** — in the top bar, remembers your choice, defaults to your browser's language on first run
+- A persistent top bar shows the active project and how many containers are running, on every screen
+- Real-time log streaming via WebSocket
+- Runs entirely from the installed package — no Node.js or build step required
+
+> The GUI server runs locally and is bound to `127.0.0.1` by default, so it is only accessible
+> from your own machine. The session token adds a second layer on top of that: even another
+> process running as your own user on the same machine cannot call the API without it. See
+> [SECURITY.md](SECURITY.md) for the full threat model.
+
+---
+
+### New in Version 3.5: generated CI and nested addons
+
+#### `rkd ci` — CI for your own project
+
+`rkd ci init` writes a GitHub Actions workflow to `.github/workflows/rkd-ci.yml`,
+parameterised from the project you already have — it reads your Dockerfile and
+compose file, so nothing extra has to be recorded anywhere.
+
+```bash
+rkd ci init                          # asks how often the expensive job runs
+rkd ci init --install-trigger never  # or decide up front
+rkd ci init --force                  # overwrite a workflow you have edited
+```
+
+Two jobs. **Lint** runs `ruff` over `addons/` plus `rkd deploy validate`, on
+every pull request, on pushes to the default branch, and on manual dispatch.
+**Install** boots the project's own compose file and runs
+`odoo -i <your modules> --stop-after-init` against a real Odoo, which is what
+catches a broken manifest or a missing dependency.
+
+Only your modules are involved: `ruff` only reads `addons/`, and third-party
+code cloned by Gitman lands in `external_addons/`, so it is never linted or
+installed by the workflow.
+
+**About Actions minutes.** Public repositories get unlimited standard runner
+minutes. Private ones share 2,000 minutes a month across the whole account on
+the Free plan, and the install job costs a few minutes per run, so it defaults
+to running only on pull requests against your default branch:
+
+| `--install-trigger` | When the install job runs |
+|---------------------|---------------------------|
+| `pull_request` | Default. Pull requests against the default branch. |
+| `push` | Every push and every pull request. |
+| `manual` | Only when dispatched by hand. |
+| `never` | The job is not generated at all. |
+
+The job is also skipped for Enterprise projects and for projects whose
+Dockerfile clones private repositories over SSH — a public runner has neither
+the subscription nor the key. The generated file says so in a comment.
+
+Running `rkd ci init` again never overwrites a workflow you edited: it reports
+the file as modified and leaves it alone unless you pass `--force`.
+
+#### `rkd ci prepare` — make a fresh clone buildable
+
+`config/odoo.conf` and `odoo_pg_pass` are gitignored because they carry
+credentials, but the Dockerfile copies `config/odoo.conf` into the image. A
+clean clone of a teammate's project therefore fails to build with
+`"/config/odoo.conf": not found`.
+
+```bash
+git clone <your project> && cd <your project>
+rkd ci prepare
+rkd up -d
+```
+
+`prepare` regenerates only what is missing — an existing `odoo.conf` is never
+touched, so your own master password survives. Useful in CI, and useful to
+anyone onboarding onto an existing project.
+
+#### The GUI is readable in daylight
+
+The web GUI now follows your system's light/dark preference by default
+(falling back to light if the system has none) and meets WCAG 2.1 AA: 4.5:1
+for text and icons, and 3:1 for the borders that are the only thing
+identifying a control, such as inputs and ghost buttons. Badges and pills are
+checked against the translucent tint they actually sit on, not against the
+surface underneath it.
+
+Every colour is a CSS custom property declared in three theme blocks — the
+light default, `prefers-color-scheme: dark`, and the explicit dark toggle — so
+the two themes cannot drift apart. Anything clickable is a real `<button>` or
+a link with an `href`, which is what puts it in the browser's tab order and
+makes the focus outline meaningful.
+
+#### Modules in subdirectories now work
+
+Odoo's `addons_path` is a static list of directories, so a module at
+`addons/oca/my_module` was invisible to Odoo unless that subdirectory was listed
+too. It did not fail loudly: Odoo logged `Modules loaded` and exited 0 with the
+module simply absent, which is why the GUI's per-module **Update** button did
+nothing for them.
+
+`rkd up`, the GUI's Up button and the GUI's Update button now sync the
+`addons_path` before starting, and `rkd info` warns when it is out of date.
+Existing projects are fixed in place on the next `rkd up` — nothing to recreate.
+The merge only ever rewrites the `addons_path` line and preserves entries it
+does not manage, such as `enterprise` or Gitman's `external_addons`.
+
+---
+
+### New in Version 3.6: language switch and a clearer GUI hierarchy
+
+#### The GUI now speaks Spanish and English
+
+A button in the top bar switches the whole interface between Spanish and
+English without a reload. The choice is saved in `localStorage`; the very
+first time, it follows your browser's own language (Spanish if it starts with
+`es`, English otherwise). Only interface text is translated — Docker logs,
+addon names and versions, container and image names, and the raw status text
+Docker itself reports (`Up 3 hours`) stay exactly as the system produces them.
+
+#### One highlighted action, project context on every screen
+
+A persistent top bar now shows the active project and how many containers are
+running on every screen, not just the Dashboard. The four metric cards that
+used to sit at the top of the Dashboard (Odoo version, PostgreSQL version,
+port, container count) became compact tags next to the project name, and the
+container table moved into the space they freed up. On the Dashboard,
+exactly one button is ever shown filled with colour: "Open Odoo" (in the top
+bar) when the Odoo container itself is running, "Start All" when it isn't.
+The other nine screens still show their own primary actions — the top bar's
+"Open Odoo" is a global shortcut, not a claim that every screen has only one
+highlighted button.
+
+---
+
+### Keeping secrets out of git
+
+A Rocketdoo project keeps credentials on disk: the SSH private key copied into
+the build context, the PostgreSQL secret, and the Odoo master password written
+into config files. `rkd scaffold` and `rkd init` therefore always write a
+`.gitignore` covering them:
+
+| Path | Why it must not be committed |
+|------|------------------------------|
+| `.ssh/` | SSH private key copied into the Docker build context |
+| `.rkd/secrets/` | VPS passwords for `rkd deploy` and `rkd instance` |
+| `odoo_pg_pass` | PostgreSQL password (Docker secret) |
+| `.rkd/instance.yaml` | Deployment config, holds `admin_passwd` in clear text |
+| `config/odoo.conf` | Odoo config, holds `admin_passwd` in clear text |
+
+An existing `.gitignore` is never overwritten — your own rules are kept and only
+the missing entries are appended. `rkd info` warns when a project is missing
+coverage; run `rkd scaffold` in it to fix it.
+
+> `config/odoo.conf` is ignored because `rkd init` regenerates it and it carries
+> the master password. If your team needs to version it, commit a sanitized copy
+> as `config/odoo.conf.example`.
+
+---
+
+### Instance secrets and re-deploys
+
+`rkd instance deploy` needs its passwords to stay the same across deploys.
+PostgreSQL only applies the password while initialising its data directory and
+ignores it afterwards, so a fresh password on a later deploy would leave Odoo
+unable to authenticate against its own database.
+
+Both the PostgreSQL password and the Odoo master password are therefore
+generated **once** and stored in `.rkd/secrets/instance_<env>_db.env` (mode
+`600`, git-ignored). Later deploys reuse them, so re-deploying is safe and the
+passwords stay recoverable:
+
+```bash
+cat .rkd/secrets/instance_stage_db.env
+```
+
+If an environment was first deployed with Rocketdoo ≤ 3.1.6, the password
+already on the VPS is adopted automatically and stored locally on the next
+deploy — no manual step needed.
+
+> Recovering an environment already broken by the old behaviour: the database
+> keeps the password from its **first** deploy, which was not saved anywhere. Reset
+> the role on the VPS and let the next deploy take over:
+>
+> ```bash
+> # on the VPS, inside <remote_path>/<env>/
+> docker compose exec db psql -U <db_user> -c "ALTER ROLE <db_user> PASSWORD '$(cat odoo_pg_pass)';"
+> ```
+
+---
+
+### Security
+
+Rocketdoo is a local, single-user development tool, not a hardened multi-user
+service. See [SECURITY.md](SECURITY.md) for the threat model: what the GUI
+exposes, where credentials live on disk, and the residual risks that are
+accepted rather than solved.
+
+---
+
+### Technical Support
+
+- If you have any questions or issues with our development environment, you can contact us and submit your inquiry or support ticket by clicking on the link below.
+
+ - [Support Link](https://odoo.hdmsoft.com.ar/mesa-de-ayuda)
+
+- If you like this project, and you want to collaborate with a donation, you can do it here !!!
+
+ - [Cafecito](https://cafecito.app/horacio1986)
+ - [Patreon](https://cafecito.app/horacio1986)
+

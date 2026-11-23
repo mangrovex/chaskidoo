@@ -1,0 +1,183 @@
+import subprocess
+import sys
+from pathlib import Path
+
+import click
+
+from rocketdoo.core.addons_path import ensure_addons_path
+from rocketdoo.core.compose import docker_available, run_compose
+
+
+def sync_addons_path():
+    """Keep Odoo's addons_path current before any command that starts it.
+
+    up, restart and `build --rebuild` all bring Odoo back with whatever
+    config/odoo.conf says, so all three need this, not just up.
+    """
+    action, changes = ensure_addons_path(Path.cwd())
+    if action == "updated":
+        click.echo(f"[rkd] addons_path updated: {', '.join(changes)}")
+    elif action == "failed":
+        click.echo(f"[rkd] could not update addons_path: {', '.join(changes)}", err=True)
+
+
+def ensure_docker_installed():
+    """Verify that Docker is installed before running commands."""
+    if not docker_available():
+        click.echo("❌ Docker is not installed or not in the PATH.")
+        sys.exit(1)
+
+
+@click.group()
+def docker():
+    """Docker commands replaced by Rocketdoo."""
+    pass
+
+
+# ==============================
+# 🔼 UP
+# ==============================
+@docker.command()
+@click.option("-d", "--detached", is_flag=True, help="Run containers in detached mode")
+@click.argument("extra_args", nargs=-1)
+def up(detached, extra_args):
+    """Equivalent to: docker compose up"""
+    ensure_docker_installed()
+    sync_addons_path()
+    args = ["up"]
+    if detached:
+        args.append("-d")
+    if extra_args:
+        args.extend(extra_args)
+    run_compose(*args)
+
+
+# ==============================
+# 🔄 RESTART
+# ==============================
+@docker.command()
+@click.option("-t", "--timeout", type=int, help="Timeout in seconds to wait for stop before killing")
+@click.argument("services", nargs=-1)
+def restart(timeout, services):
+    """Equivalent to: docker compose restart"""
+    ensure_docker_installed()
+    sync_addons_path()
+    args = ["restart"]
+    if timeout:
+        args.extend(["-t", str(timeout)])
+    if services:
+        args.extend(services)
+    run_compose(*args)
+
+
+# ==============================
+# 🔽 DOWN
+# ==============================
+@docker.command()
+@click.option("-v", "--volumes", is_flag=True, help="Remove volumes when stopping containers")
+@click.argument("extra_args", nargs=-1)
+def down(volumes, extra_args):
+    """Equivalent to: docker compose down"""
+    ensure_docker_installed()
+    args = ["down"]
+    if volumes:
+        args.append("-v")
+    if extra_args:
+        args.extend(extra_args)
+    run_compose(*args)
+
+
+# ==============================
+# 📋 STATUS
+# ==============================
+@docker.command(name="status")
+def status():
+    """Equivalent to: docker compose ps"""
+    ensure_docker_installed()
+    run_compose("ps")
+
+
+# ==============================
+# ⏹️ STOP
+# ==============================
+@docker.command()
+def stop():
+    """Equivalent to: docker compose stop"""
+    ensure_docker_installed()
+    run_compose("stop")
+
+
+# ==============================
+# ⏸️ PAUSE
+# ==============================
+@docker.command()
+def pause():
+    """Equivalent to: docker compose pause"""
+    ensure_docker_installed()
+    run_compose("pause")
+
+
+# ==============================
+# 🪵 LOGS
+# ==============================
+@docker.command()
+@click.argument("container", required=False)
+@click.option("-f", "--follow", is_flag=True, help="Follow logs in real-time")
+def logs(container, follow):
+    """Equivalent to: docker logs -f <container>"""
+    ensure_docker_installed()
+    cmd = ["docker", "logs"]
+    if follow:
+        cmd.append("-f")
+    if container:
+        cmd.append(container)
+    else:
+        click.echo("⚠️ You must specify the container name or ID.")
+        return
+    subprocess.run(cmd)
+
+
+# ==============================
+# 🔨 BUILD
+# ==============================
+@click.command()
+@click.option("-t", "--tag", required=False, help="Name of the image to be created (optional)")
+@click.option("--rebuild", is_flag=True, help="Rebuild and restart containers (docker compose up -d --build)")
+def build(tag, rebuild):
+    """
+    Builds the Docker image for Rocketdoo.
+
+    Examples:
+
+    \b
+    # Standard build
+    rkd build
+
+    \b
+    # Build with custom tag
+    rkd build -t my-image:latest
+
+    \b
+    # Rebuild and restart all containers
+    rkd build --rebuild
+    """
+    ensure_docker_installed()
+
+    if rebuild:
+        sync_addons_path()
+        args = ["up", "-d", "--build"]
+        click.echo("🔄 Rebuilding and restarting containers...")
+        click.echo(f"🚀 Executing: docker compose {' '.join(args)}")
+        run_compose(*args, check=True)
+    else:
+        # Standard docker build
+        command = ["docker", "build"]
+
+        if tag:
+            command.extend(["-t", tag])
+
+        command.append(".")
+
+        click.echo("🔨 Building Docker image...")
+        click.echo(f"🚀 Executing: {' '.join(command)}")
+        subprocess.run(command, check=True)

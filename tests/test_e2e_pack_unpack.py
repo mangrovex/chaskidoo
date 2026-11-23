@@ -1,0 +1,258 @@
+"""End-to-end: a real `rkd pack` -> `rkd unpack` round trip against Docker.
+
+#143 T12: rocketdoo/unpack_environment.py has 749 lines and no tests at all.
+Before T13 moves its logic into core/unpack.py, this is the one test that
+proves the whole chain still works against a real Odoo database -- not
+mocked subprocess calls: a database is initialised for real, packed into a
+ZIP, unpacked into a second directory, and its rows are counted afterwards.
+CA13.
+
+Marked docker + slow: it builds the Odoo image, runs `-i base`, and restores
+a pg_dump, easily several minutes end to end.
+"""
+
+import shutil
+import socket
+import subprocess
+import time
+import zipfile
+
+import pytest
+import yaml
+from click.testing import CliRunner
+
+from rocketdoo.cli import main
+from rocketdoo.core.unpack import _rename_project_in_compose
+from rocketdoo.init_project import init_from_profile
+from rocketdoo.scaffold import scaffold_project
+
+PROJECT_NAME = "rkdroundtrip"
+
+
+def _compose(root, *args, timeout, check=True):
+    result = subprocess.run(["docker", "compose", *args], cwd=root, capture_output=True, text=True, timeout=timeout)
+    if check:
+        assert result.returncode == 0, f"docker compose {' '.join(args)}\n{result.stderr[-2000:]}"
+    return result
+
+
+def _wait_for_postgres(root, max_wait=60):
+    """`docker compose up -d` returns as soon as the container starts, not
+    once Postgres accepts connections -- `odoo -i base` right after it is a
+    flaky race, not a real assertion about the restore chain.
+    """
+    for _ in range(max_wait):
+        result = _compose(root, "exec", "-T", "db", "pg_isready", "-U", "root", timeout=15, check=False)
+        if result.returncode == 0:
+            return
+        time.sleep(1)
+    raise AssertionError(f"PostgreSQL not ready in {root} after {max_wait}s")
+
+
+def _installed_module_count(root, database):
+    """A real row count in ir_module_module, not just a 0 exit code."""
+    result = _compose(
+        root,
+        "exec",
+        "-T",
+        "db",
+        "psql",
+        "-U",
+        "root",
+        "-d",
+        database,
+        "-tAc",
+        "SELECT count(*) FROM ir_module_module WHERE state = 'installed';",
+        timeout=120,
+    )
+    return int(result.stdout.strip())
+
+
+def _bind_port(port):
+    """Occupies a host port with a plain listening socket.
+
+    This is the trigger `_check_ports` reacts to. A plain socket isolates the
+    port-conflict path from the project-name conflict, which
+    `test_two_copies_of_a_project_coexist` covers on its own.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    sock.listen(1)
+    return sock
+
+
+@pytest.mark.docker
+@pytest.mark.slow
+def test_pack_then_unpack_restores_the_database(tmp_path, docker_available, monkeypatch):
+    if not docker_available:
+        pytest.skip("Docker daemon not available")
+
+    original = tmp_path / "original"
+    original.mkdir()
+    restore = tmp_path / "restore"
+
+    monkeypatch.chdir(original)
+    scaffold_project()
+    init_from_profile("odoo18-ce", project_name=PROJECT_NAME)
+
+    runner = CliRunner()
+    zip_path = tmp_path / "roundtrip.zip"
+    blockers = []
+
+    try:
+        _compose(original, "up", "-d", timeout=1800)
+        _wait_for_postgres(original)
+        _compose(
+            original,
+            "exec",
+            "-T",
+            "web",
+            "odoo",
+            "-d",
+            PROJECT_NAME,
+            "-i",
+            "base",
+            "--stop-after-init",
+            "--without-demo=all",
+            timeout=1800,
+        )
+
+        installed_before = _installed_module_count(original, PROJECT_NAME)
+        assert installed_before > 0, "base did not install -- nothing here would prove a restore"
+
+        monkeypatch.chdir(original)
+        result = runner.invoke(main, ["pack", "--db-name", PROJECT_NAME, "--output", str(zip_path), "--yes"])
+        assert result.exit_code == 0, result.output
+        assert zip_path.exists()
+
+        # Removed before the restore only to keep this test about the
+        # database; the original does not have to come down, see
+        # `test_two_copies_of_a_project_coexist`.
+        _compose(original, "down", "-v", timeout=300, check=False)
+
+        restore.mkdir()
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(restore)
+
+        # Squat the ports the restored copy would otherwise reuse, so `--yes`
+        # actually has a conflict on its hands to resolve.
+        blockers.append(_bind_port(8069))
+        blockers.append(_bind_port(8888))
+
+        monkeypatch.chdir(restore)
+        result = runner.invoke(main, ["unpack", "--yes", "--no-ssh"])
+        assert result.exit_code == 0, result.output
+        # `exit_code == 0` does not mean the restore ran: since #143 a database
+        # that is not ready in time warns and carries on. Without this the next
+        # assertion failed with a bare "database does not exist" from psql,
+        # which reads like a product bug instead of PostgreSQL being slow on a
+        # loaded machine -- that is how this test failed on CI while passing
+        # four times in a row locally.
+        assert "database was not restored" not in " ".join(result.output.split()), (
+            "unpack finished without restoring the database; nothing below proves anything.\n" + result.output
+        )
+
+        compose_data = yaml.safe_load((restore / "docker-compose.yaml").read_text())
+        web_ports = compose_data["services"]["web"]["ports"]
+        assert not any(str(p).startswith("8069:") for p in web_ports), "the occupied port must have been remapped"
+
+        # Read through the service name, not a hardcoded host port: the
+        # restored copy landed on whatever port _check_ports picked.
+        installed_after = _installed_module_count(restore, PROJECT_NAME)
+        assert installed_after == installed_before
+    finally:
+        for sock in blockers:
+            sock.close()
+        if original.exists():
+            _compose(original, "down", "-v", timeout=300, check=False)
+        if restore.exists():
+            _compose(restore, "down", "-v", timeout=300, check=False)
+        subprocess.run(["docker", "rmi", "-f", PROJECT_NAME], capture_output=True)
+        shutil.rmtree(original, ignore_errors=True)
+        shutil.rmtree(restore, ignore_errors=True)
+
+
+COEXIST_PROJECT = "rkd205probe"
+COEXIST_COMPOSE = f"""name: {COEXIST_PROJECT}
+services:
+  db:
+    image: postgres:16
+    container_name: db-{COEXIST_PROJECT}
+    environment:
+      - POSTGRES_PASSWORD=probe
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - {COEXIST_PROJECT}-db-data:/var/lib/postgresql/data/pgdata
+volumes:
+  {COEXIST_PROJECT}-db-data:
+"""
+
+
+@pytest.fixture
+def compose_copy(tmp_path):
+    """Makes a directory holding the probe compose; tears every copy down."""
+    made = []
+
+    def make(name):
+        root = tmp_path / name
+        root.mkdir()
+        (root / "docker-compose.yaml").write_text(COEXIST_COMPOSE)
+        made.append(root)
+        return root
+
+    yield make
+    for root in made:
+        _compose(root, "down", "-v", timeout=120, check=False)
+
+
+def _container_id(name):
+    result = subprocess.run(["docker", "inspect", "-f", "{{.Id}}", name], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+@pytest.mark.docker
+def test_two_copies_of_a_project_coexist(compose_copy, docker_available):
+    """#205: the renamed copy runs next to the original, which stays untouched.
+
+    Only `db` comes up -- seconds, not the minutes a full Odoo `up` costs.
+    Renaming just `container_name` would make Compose see the original's
+    containers as its own and recreate them, so the original's container id
+    is the witness that the identity moved as a whole.
+    """
+    if not docker_available:
+        pytest.skip("Docker daemon not available")
+
+    original = compose_copy("original")
+    copy = compose_copy("copy")
+    new_name = f"{COEXIST_PROJECT}-2"
+
+    _compose(original, "up", "-d", "db", timeout=300)
+    id_before = _container_id(f"db-{COEXIST_PROJECT}")
+
+    assert _rename_project_in_compose(copy, COEXIST_PROJECT, new_name)
+    _compose(copy, "up", "-d", "db", timeout=300)
+
+    assert _container_id(f"db-{COEXIST_PROJECT}") == id_before
+    assert _container_id(f"db-{new_name}") != id_before
+
+    volumes = subprocess.run(
+        ["docker", "volume", "ls", "--format", "{{.Name}}"], capture_output=True, text=True
+    ).stdout.split()
+    # Compose prefixes a named volume with the project, which is what keeps
+    # the two apart; the key inside the file is the same in both and is not
+    # rewritten (#249). What matters is that Docker ends up with two volumes,
+    # not one shared.
+    original_volume = f"{COEXIST_PROJECT}_{COEXIST_PROJECT}-db-data"
+    copy_volume = f"{new_name}_{COEXIST_PROJECT}-db-data"
+    assert original_volume in volumes
+    assert copy_volume in volumes
+    assert original_volume != copy_volume
+
+    for root, name in ((original, f"db-{COEXIST_PROJECT}"), (copy, f"db-{new_name}")):
+        running = _compose(root, "ps", "--status", "running", "-q", "db", timeout=30).stdout.strip()
+        assert running == _container_id(name)
+
+    assert f"db-{COEXIST_PROJECT}\n" not in (copy / "docker-compose.yaml").read_text()
+    assert (original / "docker-compose.yaml").read_text() == COEXIST_COMPOSE
