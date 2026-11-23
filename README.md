@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="assets/brand/chaskidoo-lockup-light.svg" alt="chaskidoo" height="96">
+  <img src="https://raw.githubusercontent.com/mangrovex/chaskidoo/main/assets/brand/chaskidoo-lockup-light.svg" alt="chaskidoo" height="96">
 </p>
 
 # Chaskidoo
+
+📖 Documentación: **https://mangrovex.github.io/chaskidoo/**
 
 **Chaskidoo** lleva tus módulos de Odoo de desarrollo a stage y a producción, como los chaskis llevaban los mensajes
 por el Qhapaq Ñan. Es el fork de Manexware de [rocketdoo](https://pypi.org/project/rocketdoo/) 3.14.1
@@ -42,7 +44,7 @@ El entorno local de desarrollo (`rkd up`) **no cambia**: siempre tiene su conten
 ## Instalación
 
 ```bash
-pip install git+ssh://git@github.com/<org>/chaskidoo.git
+pipx install chaskidoo
 # o, desde el clon:
 pip install -e .
 ```
@@ -64,7 +66,7 @@ Instalación recomendada, aislada del Python del sistema:
 
 ```bash
 brew install pipx && pipx ensurepath
-pipx install git+ssh://git@github.com/<org>/chaskidoo.git
+pipx install chaskidoo
 ```
 
 **Qué hace distinto en Mac**

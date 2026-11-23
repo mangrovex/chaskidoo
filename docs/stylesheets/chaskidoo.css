@@ -1,0 +1,38 @@
+/* Chaskidoo: índigo andino, marino, piedra, terracota, ocre */
+:root {
+  --chk-indigo: #1D2E52;
+  --chk-navy: #14213D;
+  --chk-stone: #F4E9D8;
+  --chk-terra: #D2603F;
+  --chk-ochre: #E8A33D;
+}
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--chk-navy);
+  --md-primary-fg-color--light: var(--chk-indigo);
+  --md-primary-fg-color--dark: #0E1730;
+  --md-primary-bg-color: var(--chk-stone);
+  --md-primary-bg-color--light: rgba(244, 233, 216, 0.7);
+}
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: #B8482C;            /* terracota oscurecida: 4.5:1 sobre blanco */
+  --md-accent-fg-color--transparent: rgba(210, 96, 63, 0.1);
+}
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--chk-ochre);
+}
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: #9E3E24;            /* enlaces legibles sobre blanco */
+}
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0E1730;
+  --md-typeset-a-color: var(--chk-ochre);
+}
+.md-header__button.md-logo img { height: 1.8rem; }
+.chk-hero { text-align: center; margin: 1rem 0 2rem; }
+.chk-hero img { max-width: 420px; width: 80%; }
+.chk-knots { letter-spacing: .3em; }
+.chk-knots .d { color: var(--chk-stone); text-shadow: 0 0 1px #8a7f6c; }
+.chk-knots .s { color: var(--chk-terra); }
+.chk-knots .p { color: var(--chk-ochre); }
+[data-md-color-scheme="slate"] .chk-hero .light { display: none; }
+[data-md-color-scheme="default"] .chk-hero .dark { display: none; }

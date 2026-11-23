@@ -1,0 +1,75 @@
+site_name: Chaskidoo
+site_description: Entornos de desarrollo y despliegue de Odoo con Docker — de tu máquina a stage y producción.
+site_author: Manuel Vega · Manexware S.A.
+site_url: https://mangrovex.github.io/chaskidoo/
+repo_url: https://github.com/mangrovex/chaskidoo
+repo_name: mangrovex/chaskidoo
+edit_uri: edit/main/docs/
+copyright: Chaskidoo · LGPL-3.0 · basado en Rocketdoo de HDMSoft
+
+theme:
+  name: material
+  language: es
+  logo: assets/chaskidoo-mark-dark-bg.svg
+  favicon: assets/chaskidoo-favicon.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Cambiar a modo oscuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Cambiar a modo claro
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.instant
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+extra_css:
+  - stylesheets/chaskidoo.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+
+nav:
+  - Inicio: index.md
+  - Guía:
+      - Instalación: instalacion.md
+      - Primeros pasos: primeros-pasos.md
+      - macOS: macos.md
+  - Despliegue:
+      - Stage y producción: despliegue/index.md
+      - PostgreSQL: despliegue/postgresql.md
+      - Proxy (Nginx o Traefik): despliegue/proxy.md
+      - Configuración (instance.yaml): despliegue/configuracion.md
+  - Referencia:
+      - Comandos: comandos.md
+      - Desarrollo y licencia: desarrollo.md
