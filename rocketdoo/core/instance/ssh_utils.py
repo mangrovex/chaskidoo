@@ -62,7 +62,9 @@ def resolve_auth(vps_cfg: dict, env: str, project_path: Path) -> dict:
         console.print(f"[dim]To skip this prompt next time: export INSTANCE_{env.upper()}_PASSWORD=...[/dim]")
 
     if not check_sshpass():
-        raise RuntimeError("Password authentication requires 'sshpass'.\nInstall it with: sudo apt install sshpass")
+        from rocketdoo.core.host_platform import install_hint
+
+        raise RuntimeError(f"Password authentication requires 'sshpass'.\nInstall it with: {install_hint('sshpass')}")
 
     return {"method": "password", "key_path": None, "password": password}
 
@@ -117,6 +119,13 @@ def ensure_dirs_command(dirs: list[str], chown_target: str, owner: str) -> str:
     )
 
 
+# Manexware fork: Finder and macOS metadata (.DS_Store, AppleDouble ._*
+# files on non-APFS volumes) must not travel to the VPS, where they would
+# sit among the addons. --delete-excluded is not used: it would remove such
+# files from the server only if they existed there, which is harmless either way.
+RSYNC_EXCLUDES = ["--exclude", ".DS_Store", "--exclude", "._*", "--exclude", "__pycache__/", "--exclude", "*.pyc"]
+
+
 def build_rsync_cmd(
     auth: dict, port: int, user: str, host: str, local: str, remote: str, extra_opts: list[str] | None = None
 ) -> tuple[list[str], dict | None]:
@@ -128,6 +137,7 @@ def build_rsync_cmd(
         "--delete",
         "-e",
         ssh_e,
+        *RSYNC_EXCLUDES,
         *(extra_opts or []),
         local,
         f"{user}@{host}:{remote}",

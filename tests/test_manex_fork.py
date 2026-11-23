@@ -247,6 +247,8 @@ def test_two_sites_on_one_vps_pass_nginx_t(tmp_path):
     if not Path("/proc/net/if_inet6").exists() or not Path("/proc/net/if_inet6").read_text().strip():
         # What install_script does on a host without IPv6.
         body = body.replace("    listen [::]:80;\n", "")
+    # nginx -t opens the listening sockets: an unprivileged port lets CI run it as a normal user.
+    body = body.replace("listen 80;", "listen 18080;").replace("listen [::]:80;", "listen [::]:18080;")
     conf = tmp_path / "nginx.conf"
     conf.write_text(
         f"pid {tmp_path}/nginx.pid;\nerror_log {tmp_path}/error.log;\nevents {{}}\n"
@@ -370,3 +372,69 @@ def test_rkd_init_profile_stores_choices(tmp_path):
     assert result.returncode == 0, result.stderr[-500:]
     stored = yaml.safe_load((tmp_path / ".rkd" / "instance_defaults.yaml").read_text())
     assert stored == {"db_mode": "container", "proxy": "traefik"}
+
+
+# ─── macOS / Apple Silicon ─────────────────────────────────────────────────
+
+from unittest import mock  # noqa: E402
+
+from rocketdoo.core import host_platform  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "system,machine,version,expected",
+    [
+        ("Darwin", "arm64", "16.0", "linux/amd64"),
+        ("Darwin", "arm64", "17.0", "linux/amd64"),
+        ("Darwin", "arm64", "18.0", ""),
+        ("Darwin", "arm64", "19.0", ""),
+        ("Darwin", "x86_64", "16.0", ""),
+        ("Linux", "aarch64", "17.0", "linux/amd64"),
+        ("Linux", "x86_64", "17.0", ""),
+    ],
+)
+def test_odoo_platform_by_host(system, machine, version, expected):
+    with mock.patch("platform.system", return_value=system), mock.patch("platform.machine", return_value=machine):
+        assert host_platform.odoo_platform(version) == expected
+
+
+def test_install_hint_uses_brew_on_macos():
+    with mock.patch("platform.system", return_value="Darwin"), mock.patch("shutil.which", return_value="/opt/homebrew/bin/brew"):
+        assert host_platform.install_hint("sshpass") == "brew install sshpass"
+    with mock.patch("platform.system", return_value="Darwin"), mock.patch("shutil.which", return_value=None):
+        assert "https://brew.sh" in host_platform.install_hint("sshpass")
+
+
+def test_local_compose_gets_platform_only_when_emulating():
+    from jinja2 import Environment as Env, FileSystemLoader as Loader
+
+    tpl = Env(loader=Loader(str(TEMPLATES.parent))).get_template("docker-compose.yaml.jinja")
+    ctx = dict(project_name="demo", restart="no", odoo_container="o", odoo_port=8069, vsc_port=8888,
+               db_version="16", db_container="d")
+    emulated = yaml.safe_load(tpl.render(**ctx, odoo_platform="linux/amd64"))
+    native = yaml.safe_load(tpl.render(**ctx, odoo_platform=""))
+    assert emulated["services"]["web"]["platform"] == "linux/amd64"
+    assert "platform" not in native["services"]["web"]
+    assert "platform" not in emulated["services"]["db"]  # postgres is multi-arch
+
+
+def test_rsync_never_uploads_finder_metadata():
+    from rocketdoo.core.instance.ssh_utils import build_rsync_cmd
+
+    cmd, _ = build_rsync_cmd({"method": "ssh_key", "key_path": "", "password": None}, 22, "u", "h", "addons/", "/opt/x/")
+    joined = " ".join(cmd)
+    assert "--exclude .DS_Store" in joined and "--exclude ._*" in joined
+    # Only options that macOS's rsync (2.6.9 and openrsync) understands.
+    for opt in [a for a in cmd if a.startswith("--")]:
+        assert opt in ("--delete", "--exclude"), opt
+
+
+def test_hosts_guide_on_macos_mentions_dns_flush():
+    from click.testing import CliRunner
+
+    from rocketdoo.traefik_cli import traefik
+
+    with mock.patch("platform.system", return_value="Darwin"):
+        result = CliRunner().invoke(traefik, ["guide"])
+    assert result.exit_code == 0
+    assert "dscacheutil -flushcache" in result.output and "macOS" in result.output

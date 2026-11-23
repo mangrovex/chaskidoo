@@ -34,6 +34,41 @@ pip install git+ssh://git@github.com/<org>/rocketdoo-manex.git
 pip install -e .
 ```
 
+## macOS
+
+rkd corre en macOS (Intel y Apple Silicon M1–M4) además de Linux y WSL2. Los VPS siguen siendo Linux.
+
+**Requisitos en el Mac**
+
+| Herramienta | Cómo | Para qué |
+|---|---|---|
+| Python ≥ 3.10 | `brew install python@3.12` (el `python3` de Apple es 3.9) | rkd |
+| Docker | Docker Desktop, OrbStack o Colima | entorno local |
+| rsync, ssh, ssh-agent | vienen con macOS | despliegue |
+| sshpass (opcional) | `brew install sshpass` | solo si el VPS usa contraseña en vez de llave |
+
+Instalación recomendada, aislada del Python del sistema:
+
+```bash
+brew install pipx && pipx ensurepath
+pipx install git+ssh://git@github.com/<org>/rocketdoo-manex.git
+```
+
+**Qué hace distinto en Mac**
+
+- **Apple Silicon + Odoo 15–17**: la imagen oficial `odoo` solo publica builds arm64 desde la 18. `rkd init` lo detecta
+  y agrega `platform: linux/amd64` al servicio `web` del compose local, que corre emulado. Activar
+  *Settings → General → Use Rosetta for x86_64/amd64 emulation* en Docker Desktop lo hace mucho más rápido.
+  Odoo 18, 19 y 20 corren nativos en arm64. En Linux y en Mac Intel el compose queda igual que antes.
+- **Archivos del Finder**: el despliegue excluye `.DS_Store`, `._*`, `__pycache__/` y `*.pyc` al subir addons y Enterprise.
+- **Mensajes de instalación**: sugieren `brew install …` en vez de `apt`.
+- **Dominios locales** (`rkd traefik`): en Mac el dominio propuesto termina en `.test` (`.local` es Bonjour y resuelve
+  lento) y la guía incluye `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` después de editar `/etc/hosts`.
+- Las opciones de rsync usadas (`-avz --delete --exclude`) funcionan con el rsync de macOS (2.6.9 y openrsync).
+
+La integración continua (`.github/workflows/tests.yml`) ejecuta las pruebas y un `rkd init` real en
+`macos-latest` (Apple Silicon) y `ubuntu-latest`, con Python 3.10 y 3.12.
+
 ## Ejemplo de `.rkd/instance.yaml`
 
 ```yaml
@@ -113,13 +148,14 @@ Cada comando de proxy rechaza un entorno configurado con el otro proxy y dice cu
 - `odoo.conf`: `db_host`, `db_port`, `db_sslmode` y `dbfilter = ^<db_name>$`.
 - Pre-flight: revisa el proxy configurado, sudo para `db_mode: vps` (bloqueante) y conectividad TCP a un PostgreSQL externo.
 
-Archivos nuevos: `core/instance/{defaults,external_db,vps_postgres,proxy_traefik}.py`. Modificados: `cli.py`,
+Archivos nuevos: `core/host_platform.py`, `core/instance/{defaults,external_db,vps_postgres,proxy_traefik}.py`,
+`.github/workflows/tests.yml`. Modificados: `cli.py`,
 `init_project.py`, `instance_cli.py`, `core/models/instance.py`, `core/instance/{config_manager,deployer_docker,db_seed,preflight,proxy}.py`,
 `gui/api/instances.py`, `templates/instance/{docker-compose,odoo.conf}.jinja`.
 
 ## Verificado
 
-- `tests/test_manex_fork.py` (33 pruebas): las 6 combinaciones `db_mode` × `proxy` pasan `docker compose config`; sitios
+- `tests/test_manex_fork.py` (44 pruebas, incluidas las de macOS con plataforma simulada): las 6 combinaciones `db_mode` × `proxy` pasan `docker compose config`; sitios
   Nginx de stage y prod juntos pasan `nginx -t`; todos los scripts generados pasan `bash -n`; `rkd init --profile` con opciones.
 - El script de PostgreSQL en el VPS se ejecutó de verdad en Ubuntu 24.04 (PostgreSQL 16): conexión del rol por la IP del bridge,
   rechazo de contraseña incorrecta, segunda ejecución sin reinicio ni líneas duplicadas.
@@ -128,6 +164,7 @@ Archivos nuevos: `core/instance/{defaults,external_db,vps_postgres,proxy_traefik
 ## Pendiente / limitaciones
 
 - No se probó contra un VPS real con Docker en marcha (el sandbox no tiene daemon de Docker).
+- macOS se verificó simulando la plataforma; la verificación en un Mac real es el CI de GitHub Actions al subir el repo.
 - El formulario web (`rkd gui`) no muestra aún `proxy`/`db_mode`; usa los valores de `rkd init` para entornos nuevos y
   conserva los del archivo.
 - El despliegue **nativo** (`type: native`) no cambia.

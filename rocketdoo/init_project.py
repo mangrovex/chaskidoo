@@ -386,6 +386,16 @@ def generate_project(
     Shared by the interactive wizard and by `rkd init --profile`, so both
     produce byte-identical projects for the same choices.
     """
+    # Manexware fork: Apple Silicon (and any arm64 host) emulates amd64 for
+    # Odoo versions the official image does not build for arm64.
+    from rocketdoo.core.host_platform import odoo_platform
+
+    context.setdefault("odoo_platform", odoo_platform(context["odoo_version"]))
+    if context["odoo_platform"]:
+        click.echo(
+            f"\nℹ️  Odoo {context['odoo_version']} has no arm64 image: it will run under amd64 emulation "
+            "(enable 'Use Rosetta' in Docker Desktop for speed). Odoo 18+ runs natively."
+        )
     project_name = context["project_name"]
     odoo_version = context["odoo_version"]
     odoo_edition = context["odoo_edition"]

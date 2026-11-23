@@ -142,7 +142,10 @@ def traefik_on(domain, mode, traefik_dir, email):
 
     # ── Domain ──
     if not domain:
-        default_domain = existing.get("domain") or f"{project}.local"
+        from rocketdoo.core.host_platform import is_macos
+
+        # .local is mDNS (Bonjour) on macOS: lookups wait for multicast first.
+        default_domain = existing.get("domain") or f"{project}.{'test' if is_macos() else 'local'}"
         domain = Prompt.ask("Domain", default=default_domain)
 
     # ── Email (prod only) ──
@@ -253,19 +256,23 @@ def traefik_guide():
 
     \b
     Covers:
-      - Linux /etc/hosts
+      - Linux and macOS /etc/hosts
       - WSL2: both WSL2 and Windows hosts files
     """
     config = core_traefik.load_config()
     domain = config.get("domain", "myproject.local")
     is_wsl = _is_wsl2()
+    from rocketdoo.core.host_platform import flush_dns_hint, is_macos
+
+    mac = is_macos()
 
     console.print()
     console.print(
         Panel(
             "[bold cyan]Local Domain Setup Guide[/bold cyan]\n\n"
             f"[dim]Domain:[/dim] [cyan bold]{domain}[/cyan bold]"
-            + ("\n[yellow]WSL2 environment detected[/yellow]" if is_wsl else ""),
+            + ("\n[yellow]WSL2 environment detected[/yellow]" if is_wsl else "")
+            + ("\n[yellow]macOS detected[/yellow]" if mac else ""),
             border_style="cyan",
             box=box.ROUNDED,
         )
@@ -273,8 +280,16 @@ def traefik_guide():
 
     # ── Linux / WSL2 /etc/hosts ──
     console.print()
-    console.print("[bold]Step 1[/bold] — Add to [cyan]/etc/hosts[/cyan] (Linux / WSL2 terminal)\n")
+    where = "macOS Terminal" if mac else "Linux / WSL2 terminal"
+    console.print(f"[bold]Step 1[/bold] — Add to [cyan]/etc/hosts[/cyan] ({where})\n")
     console.print(f'  [dim]$[/dim] [green]echo "127.0.0.1  {domain}" | sudo tee -a /etc/hosts[/green]\n')
+    if mac:
+        # macOS caches resolutions; without the flush the old answer can stick.
+        console.print(f"  [dim]Flush the DNS cache:[/dim] [green]{flush_dns_hint()}[/green]\n")
+        console.print(
+            "  [dim]Use a domain ending in[/dim] [cyan].test[/cyan] [dim]or[/dim] [cyan].localhost[/cyan][dim]: "
+            ".local is reserved for Bonjour (mDNS) on macOS and resolves slowly.[/dim]\n"
+        )
     console.print(f"  [dim]Verify:[/dim] [green]ping -c 1 {domain}[/green]\n")
 
     # ── WSL2: Windows hosts file ──
@@ -295,7 +310,10 @@ def traefik_guide():
 
     # ── Notes ──
     console.print("[bold]Notes[/bold]\n")
-    console.print("  • [dim]/etc/hosts changes take effect immediately (no restart needed)[/dim]")
+    console.print(
+        "  • [dim]/etc/hosts changes take effect "
+        + ("after the DNS flush above[/dim]" if mac else "immediately (no restart needed)[/dim]")
+    )
     console.print("  • [dim]Windows hosts file may require a browser restart to take effect[/dim]")
     console.print("  • [dim]Traefik must be running:[/dim] [cyan]rkd traefik status[/cyan]")
     console.print("  • [dim]To undo: remove the line with[/dim] [cyan]sudo nano /etc/hosts[/cyan]")

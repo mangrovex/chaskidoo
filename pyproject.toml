@@ -1,6 +1,6 @@
 [project]
 name = "rocketdoo-manex"
-version = "3.14.1+manex.2"
+version = "3.14.1+manex.3"
 description = "Manexware fork of rocketdoo: Odoo environments with Docker; PostgreSQL in Docker, on the VPS or external; Nginx or Traefik."
 authors = [
     { name = "Horacio Montaño", email = "horaciomontano@hdmsoft.com.ar" }

@@ -3,6 +3,8 @@ RocketDoo Deploy - VPS Deployer
 Deploys Odoo modules to VPS servers (Docker or Native)
 """
 
+from rocketdoo.core.host_platform import install_hint
+from rocketdoo.core.instance.ssh_utils import RSYNC_EXCLUDES
 import stat
 import subprocess
 from getpass import getpass
@@ -143,7 +145,7 @@ class VPSDeployer(BaseDeployer):
             if not self.password:
                 errors.append("Password authentication selected but 'password' not configured or environment variable not set")
             elif not check_sshpass():
-                errors.append("Password authentication requires 'sshpass'. Install it with: sudo apt install sshpass")
+                errors.append(f"Password authentication requires 'sshpass'. Install it with: {install_hint('sshpass')}")
 
         # Validate type-specific config
         if self.deployment_type == "docker":
@@ -437,7 +439,7 @@ class VPSDeployer(BaseDeployer):
             return result
         except FileNotFoundError as e:
             if "sshpass" in str(e):
-                self.log("Error: 'sshpass' not found. Install it with: sudo apt install sshpass", "error")
+                self.log(f"Error: 'sshpass' not found. Install it with: {install_hint('sshpass')}", "error")
                 raise
             raise
 
@@ -454,7 +456,7 @@ class VPSDeployer(BaseDeployer):
         """
         try:
             # Build rsync command
-            rsync_cmd = ["rsync", "-avz", "--delete"]
+            rsync_cmd = ["rsync", "-avz", "--delete", *RSYNC_EXCLUDES]
 
             # Add SSH options based on auth method
             ssh_opts = f"-p {self.port} -o StrictHostKeyChecking=no"
@@ -485,7 +487,7 @@ class VPSDeployer(BaseDeployer):
             return False
         except FileNotFoundError as e:
             if "sshpass" in str(e):
-                self.log("Error: 'sshpass' not found. Install it with: sudo apt install sshpass", "error")
+                self.log(f"Error: 'sshpass' not found. Install it with: {install_hint('sshpass')}", "error")
             else:
                 self.log(f"Upload error: {e}", "error")
             return False

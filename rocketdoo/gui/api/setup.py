@@ -136,6 +136,9 @@ async def init_project(body: InitRequest):
         }
 
         _render(tpl, "Dockerfile.jinja", cwd / "Dockerfile", **context)
+        from rocketdoo.core.host_platform import odoo_platform
+
+        context.setdefault("odoo_platform", odoo_platform(context.get("odoo_version", "")))
         _render(tpl, "docker-compose.yaml.jinja", cwd / "docker-compose.yaml", **context)
         _render(tpl / "config", "odoo.conf.jinja", cwd / "config" / "odoo.conf", **context)
         _render(tpl / ".vscode", "launch.json.jinja", cwd / ".vscode" / "launch.json", **context)

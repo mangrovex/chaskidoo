@@ -4,6 +4,11 @@ services:
     build: .
     restart: "{{restart}}"
     image: {{project_name}}
+{%- if odoo_platform is defined and odoo_platform %}
+    # arm64 host (Apple Silicon) + Odoo < 18: the official image has no arm64
+    # build for this version, so Docker runs it under amd64 emulation.
+    platform: {{odoo_platform}}
+{%- endif %}
     container_name: {{odoo_container}}
     depends_on:
       - db
