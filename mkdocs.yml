@@ -73,3 +73,13 @@ nav:
   - Referencia:
       - Comandos: comandos.md
       - Desarrollo y licencia: desarrollo.md
+  - mangrovex ↗: https://mangrovex.github.io
+
+extra:
+  social:
+    - icon: material/sprout
+      link: https://mangrovex.github.io
+      name: mangrovex · todos los desarrollos
+    - icon: fontawesome/brands/github
+      link: https://github.com/mangrovex/chaskidoo
+      name: Chaskidoo en GitHub
